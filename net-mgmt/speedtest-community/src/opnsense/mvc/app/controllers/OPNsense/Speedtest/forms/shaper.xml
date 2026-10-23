@@ -1,0 +1,32 @@
+<form>
+    <field>
+        <id>speedtest.shaper.enabled</id>
+        <label>Set shaper bandwidth</label>
+        <type>checkbox</type>
+        <help>Allow the "speedtest setshaper" action (cron job or Apply now) to set the bandwidth of the traffic shaper pipes from the speedtest results.</help>
+    </field>
+    <field>
+        <id>speedtest.shaper.interface</id>
+        <label>Interface</label>
+        <type>dropdown</type>
+        <help>Interface the speedtest runs over. Its enabled shaper rules point to the pipes to update: incoming traffic to the download pipe, outgoing traffic to the upload pipe. Without rules on this interface, the pipes named WAN_download_p and WAN_upload_p are used.</help>
+    </field>
+    <field>
+        <id>speedtest.shaper.threshold</id>
+        <label>Threshold (%)</label>
+        <type>text</type>
+        <help>Pipe bandwidth as a percentage of the average speedtest result, for download and upload.</help>
+    </field>
+    <field>
+        <id>speedtest.shaper.probes</id>
+        <label>Speedtest probes</label>
+        <type>text</type>
+        <help>Number of most recent speedtest results to average.</help>
+    </field>
+    <field>
+        <id>speedtest.shaper.minchange</id>
+        <label>Minimum change (%)</label>
+        <type>text</type>
+        <help>Only update a pipe when the new bandwidth differs from the current one by at least this percentage.</help>
+    </field>
+</form>

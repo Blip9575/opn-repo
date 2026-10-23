@@ -1,0 +1,457 @@
+#!/usr/local/bin/php
+<?php
+
+/*
+ * Copyright (C) 2026 Blip9575
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
+ * AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+ * AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY,
+ * OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ */
+
+/*
+ * Set the traffic shaper pipes of an interface from the speedtest results.
+ *
+ *   shaper.php set     average the last N results, scale by the threshold and
+ *                      update the pipes when they differ by the minimum change
+ *   shaper.php create  create pipes, queues and rules on the interface for the
+ *                      directions that have none yet
+ *   shaper.php sync    when the interface address changed (newwanip hook), update
+ *                      the rules that exclude the previous address; set runs it too
+ *   shaper.php rules   second step of create (run by create itself): a rule can
+ *                      only refer to a queue that the process saw when it loaded
+ *                      the model, so the rules are added by a fresh process
+ *
+ * Pipes are found through the shaper rules on the interface (in: download,
+ * out: upload, a queue counts as its pipe), else by the names below.
+ */
+
+require_once('script/load_phalcon.php');
+require_once('config.inc');
+require_once('interfaces.inc');
+require_once('util.inc');
+
+use OPNsense\Core\Backend;
+use OPNsense\Core\Config;
+use OPNsense\Speedtest\Speedtest;
+use OPNsense\TrafficShaper\TrafficShaper;
+
+const CSV_FILE = '/usr/local/opnsense/scripts/OPNsense/speedtest/speedtest.csv';
+const LOCK_FILE = '/tmp/speedtest_shaper.lock';
+// speedtest.csv columns
+const CSV_DOWNLOAD = 5;
+const CSV_UPLOAD = 6;
+
+// per direction: rule direction, csv column and the names used when creating
+const DIRECTIONS = [
+    'download' => [
+        'rule' => 'in',
+        'column' => CSV_DOWNLOAD,
+        'pipe' => 'WAN_download_p',
+        'queue' => 'WAN_download_q',
+        'rulename' => 'WAN to LAN',
+    ],
+    'upload' => [
+        'rule' => 'out',
+        'column' => CSV_UPLOAD,
+        'pipe' => 'WAN_upload_p',
+        'queue' => 'WAN_upload_q',
+        'rulename' => 'LAN to WAN',
+    ],
+];
+
+function finish($result)
+{
+    $msg = $result['message'] ?? $result['status'];
+    // reopen: saving the config switches the syslog identity
+    openlog('speedtest', LOG_ODELAY, LOG_USER);
+    syslog($result['status'] == 'error' ? LOG_ERR : LOG_NOTICE, 'shaper: ' . $msg);
+    echo json_encode($result) . PHP_EOL;
+    exit(0);
+}
+
+/**
+ * average download and upload (Mbit/s) of the last $count results
+ */
+function speedtest_average($count)
+{
+    $rows = [];
+    if (($fh = @fopen(CSV_FILE, 'r')) !== false) {
+        fgetcsv($fh, 0, ',', '"', '\\'); // header
+        while (($row = fgetcsv($fh, 0, ',', '"', '\\')) !== false) {
+            if (isset($row[CSV_UPLOAD]) && is_numeric($row[CSV_DOWNLOAD]) && is_numeric($row[CSV_UPLOAD]) &&
+                $row[CSV_DOWNLOAD] > 0 && $row[CSV_UPLOAD] > 0) {
+                $rows[] = $row;
+                if (count($rows) > $count) {
+                    array_shift($rows);
+                }
+            }
+        }
+        fclose($fh);
+    }
+    if (count($rows) == 0) {
+        return null;
+    }
+    $avg = ['probes' => count($rows)];
+    foreach (DIRECTIONS as $dir => $props) {
+        $avg[$dir] = array_sum(array_column($rows, $props['column'])) / count($rows);
+    }
+    return $avg;
+}
+
+/**
+ * pipes per direction: through the rules on the interface, else by name
+ * @return array direction => list of pipe uuids
+ */
+function discover_pipes($shaper, $interface, $by_name = true)
+{
+    $queue_pipe = [];
+    foreach ($shaper->queues->queue->iterateItems() as $uuid => $queue) {
+        $queue_pipe[$uuid] = (string)$queue->pipe;
+    }
+    $pipes = [];
+    foreach ($shaper->pipes->pipe->iterateItems() as $uuid => $pipe) {
+        $pipes[$uuid] = (string)$pipe->description;
+    }
+    $found = [];
+    foreach (DIRECTIONS as $dir => $props) {
+        $found[$dir] = [];
+    }
+    foreach ($shaper->rules->rule->iterateItems() as $rule) {
+        if ((string)$rule->enabled != '1' || (string)$rule->interface != $interface) {
+            continue;
+        }
+        $target = (string)$rule->target;
+        $pipe = isset($pipes[$target]) ? $target : ($queue_pipe[$target] ?? null);
+        if ($pipe === null) {
+            continue;
+        }
+        foreach (DIRECTIONS as $dir => $props) {
+            // a rule without direction matches both
+            if (in_array((string)$rule->direction, ['', $props['rule']]) && !in_array($pipe, $found[$dir])) {
+                $found[$dir][] = $pipe;
+            }
+        }
+    }
+    foreach (DIRECTIONS as $dir => $props) {
+        if (empty($found[$dir]) && $by_name) {
+            $named = array_keys($pipes, $props['pipe'], true);
+            if (count($named) == 1) {
+                $found[$dir] = $named;
+            }
+        }
+    }
+    return $found;
+}
+
+function pipe_kbit($pipe)
+{
+    $factor = ['bit' => 0.001, 'Kbit' => 1, 'Mbit' => 1000, 'Gbit' => 1000000];
+    return (int)round((float)(string)$pipe->bandwidth * ($factor[(string)$pipe->bandwidthMetric] ?? 1));
+}
+
+function shaper_apply()
+{
+    $backend = new Backend();
+    $backend->configdRun('template reload OPNsense/Shaper');
+    $backend->configdRun('template reload OPNsense/IPFW');
+    foreach (['shaper reload', 'ipfw reload'] as $cmd) {
+        $ret = trim($backend->configdRun($cmd));
+        if ($ret != 'OK') {
+            return "$cmd: $ret";
+        }
+    }
+    return null;
+}
+
+/**
+ * validate and write the shaper model to the config (not applied yet)
+ */
+function save_shaper($shaper)
+{
+    $errors = [];
+    foreach ($shaper->performValidation() as $msg) {
+        $errors[] = $msg->getField() . ': ' . $msg->getMessage();
+    }
+    if (!empty($errors)) {
+        return implode(', ', $errors);
+    }
+    $shaper->serializeToConfig();
+    Config::getInstance()->save();
+    return null;
+}
+
+/**
+ * uuid of the item in $items with this description, null when there is none
+ * (or more than one) or it does not match $filter
+ */
+/**
+ * The rules exclude the interface address, so the firewall's own traffic and
+ * with it the speedtest is not shaped. Keep that exclusion current: replace the
+ * previously recorded address in the rules on the interface by the current one.
+ */
+function sync_exclusion($mdl, $interface)
+{
+    $current = get_interface_ip($interface);
+    $stored = (string)$mdl->shaper->address;
+    if (empty($current)) {
+        return ['status' => 'unchanged', 'message' => "interface $interface has no IPv4 address, exclusion not checked"];
+    }
+    if ($stored == $current) {
+        return ['status' => 'unchanged', 'message' => "excluded address $current is current"];
+    }
+    $updated = 0;
+    if ($stored != '') {
+        $shaper = new TrafficShaper();
+        foreach ($shaper->rules->rule->iterateItems() as $rule) {
+            if ((string)$rule->interface != $interface) {
+                continue;
+            }
+            foreach (['destination' => 'in', 'source' => 'out'] as $field => $direction) {
+                $not = $field . '_not';
+                if (
+                    in_array((string)$rule->direction, ['', $direction]) &&
+                    (string)$rule->$not == '1' && (string)$rule->$field == $stored
+                ) {
+                    $rule->$field = $current;
+                    $updated++;
+                }
+            }
+        }
+        if ($updated > 0) {
+            $err = save_shaper($shaper) ?? shaper_apply();
+            if ($err !== null) {
+                return ['status' => 'error', 'message' => $err];
+            }
+        }
+    }
+    $mdl->shaper->address = $current;
+    $mdl->serializeToConfig();
+    Config::getInstance()->save();
+    return [
+        'status' => $updated > 0 ? 'updated' : 'unchanged',
+        'message' => $stored == '' ? "excluded address recorded as $current" :
+            sprintf('excluded address %s -> %s in %d rule(s)', $stored, $current, $updated),
+    ];
+}
+
+function find_named($items, $description, $filter = null)
+{
+    $match = [];
+    foreach ($items->iterateItems() as $uuid => $item) {
+        if ((string)$item->description == $description && ($filter === null || $filter($item))) {
+            $match[] = $uuid;
+        }
+    }
+    return count($match) == 1 ? $match[0] : null;
+}
+
+$action = $argv[1] ?? '';
+if (!in_array($action, ['set', 'create', 'rules', 'sync'])) {
+    echo json_encode(['status' => 'error', 'message' => 'usage: shaper.php set|create']) . PHP_EOL;
+    exit(0);
+}
+
+openlog('speedtest', LOG_ODELAY, LOG_USER);
+$lock = fopen(LOCK_FILE, 'a+');
+if ($action != 'rules' && !flock($lock, LOCK_EX | LOCK_NB)) {
+    finish(['status' => 'error', 'message' => 'another shaper update is running']);
+}
+
+$mdl = new Speedtest();
+$settings = $mdl->shaper;
+$interface = (string)$settings->interface;
+$threshold = (int)(string)$settings->threshold;
+if ($action == 'sync') {
+    finish(sync_exclusion($mdl, $interface));
+}
+if ($action == 'set' && (string)$settings->enabled != '1') {
+    finish(['status' => 'disabled', 'message' => 'setting the shaper bandwidth is disabled']);
+}
+// in case an address change was missed, the pipes are set after the exclusion is current
+$sync = $action == 'set' ? sync_exclusion($mdl, $interface) : null;
+if ($sync !== null && $sync['status'] == 'error') {
+    finish($sync);
+}
+
+$avg = speedtest_average((int)(string)$settings->probes);
+if ($avg === null) {
+    finish(['status' => 'error', 'message' => 'no speedtest results to average']);
+}
+$result = ['status' => 'unchanged', 'interface' => $interface, 'probes' => $avg['probes'], 'threshold' => $threshold];
+$targets = [];
+foreach (DIRECTIONS as $dir => $props) {
+    $targets[$dir] = max(1, (int)round($avg[$dir] * 1000 * $threshold / 100));
+    $result[$dir] = ['average_mbit' => round($avg[$dir], 2), 'target_kbit' => $targets[$dir]];
+}
+
+$shaper = new TrafficShaper();
+$found = discover_pipes($shaper, $interface);
+$changed = false;
+
+if ($action == 'set') {
+    $minchange = (int)(string)$settings->minchange;
+    $msgs = [];
+    foreach (DIRECTIONS as $dir => $props) {
+        if (count($found[$dir]) != 1) {
+            finish(['status' => 'error', 'message' => sprintf(
+                count($found[$dir]) == 0 ?
+                    'no %s pipe found for interface %s, use "Create shaper"' :
+                    'more than one %s pipe found for interface %s, nothing changed',
+                $dir,
+                $interface
+            )] + $result);
+        }
+    }
+    foreach (DIRECTIONS as $dir => $props) {
+        $pipe = $shaper->getNodeByReference('pipes.pipe.' . $found[$dir][0]);
+        $current = pipe_kbit($pipe);
+        $result[$dir]['pipe'] = sprintf('%s (%s)', $pipe->description, $pipe->number);
+        $result[$dir]['current_kbit'] = $current;
+        $diff = $current > 0 ? abs($targets[$dir] - $current) * 100 / $current : 100;
+        if ($targets[$dir] != $current && $diff >= $minchange) {
+            $pipe->bandwidth = (string)$targets[$dir];
+            $pipe->bandwidthMetric = 'Kbit';
+            $result[$dir]['action'] = 'updated';
+            $msgs[] = sprintf('%s %s: %d -> %d Kbit/s', $dir, $pipe->description, $current, $targets[$dir]);
+            $changed = true;
+        } else {
+            $result[$dir]['action'] = 'unchanged';
+            $msgs[] = sprintf('%s %s: %d Kbit/s kept (target %d, %.1f%% < %d%%)', $dir, $pipe->description, $current, $targets[$dir], $diff, $minchange);
+        }
+    }
+    $result['message'] = implode('; ', $msgs) . sprintf(' (average of %d probes x %d%%)', $avg['probes'], $threshold);
+    if ($sync['status'] == 'updated') {
+        $result['message'] .= '; ' . $sync['message'];
+    }
+    if ($changed) {
+        $err = save_shaper($shaper) ?? shaper_apply();
+        if ($err !== null) {
+            finish(['status' => 'error', 'message' => $err] + $result);
+        }
+        $result['status'] = 'updated';
+    }
+} else {
+    // only directions without rules on the interface; a pipe or queue left
+    // by an earlier, unfinished run is reused by name
+    $missing = array_keys(array_filter(discover_pipes($shaper, $interface, false), function ($pipes) {
+        return empty($pipes);
+    }));
+    if (empty($missing)) {
+        finish(['status' => 'exists', 'message' => "shaper rules already exist for interface $interface"] + $result);
+    }
+    $address = get_interface_ip($interface);
+    if (empty($address)) {
+        // the rules exclude the firewall's own address, so the speedtest itself is not shaped
+        finish(['status' => 'error', 'message' => "interface $interface has no IPv4 address, nothing created"] + $result);
+    }
+
+    if ($action == 'create') {
+        // pipes and queues, then the rules in a fresh process (see "rules" above)
+        $msgs = [];
+        foreach ($missing as $dir) {
+            $props = DIRECTIONS[$dir];
+            $pipe_uuid = find_named($shaper->pipes->pipe, $props['pipe']);
+            if ($pipe_uuid === null) {
+                $pipe = $shaper->pipes->pipe->Add();
+                $pipe->number = $shaper->newPipeNumber();
+                $pipe->bandwidth = (string)$targets[$dir];
+                $pipe->bandwidthMetric = 'Kbit';
+                $pipe->scheduler = 'fq_pie';
+                $pipe->description = $props['pipe'];
+                $pipe->origin = 'TrafficShaper';
+                $pipe_uuid = $pipe->getAttribute('uuid');
+                $msgs[] = sprintf('pipe %s (%d Kbit/s)', $props['pipe'], $targets[$dir]);
+            }
+            $queue_uuid = find_named($shaper->queues->queue, $props['queue'], function ($queue) use ($pipe_uuid) {
+                return (string)$queue->pipe == $pipe_uuid;
+            });
+            if ($queue_uuid === null) {
+                $queue = $shaper->queues->queue->Add();
+                $queue->number = $shaper->newQueueNumber();
+                $queue->pipe = $pipe_uuid;
+                $queue->weight = '100';
+                $queue->description = $props['queue'];
+                $queue->origin = 'TrafficShaper';
+                $msgs[] = 'queue ' . $props['queue'];
+            }
+        }
+        if (!empty($msgs)) {
+            $err = save_shaper($shaper);
+            if ($err !== null) {
+                finish(['status' => 'error', 'message' => $err] + $result);
+            }
+        }
+        $rules = json_decode(shell_exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg(__FILE__) . ' rules'), true) ??
+            ['status' => 'error', 'message' => 'adding the rules failed'];
+        $msgs = array_merge($msgs, $rules['created'] ?? []);
+        $result['status'] = $rules['status'];
+        $result['message'] = $rules['status'] == 'created' ?
+            'created ' . implode(', ', $msgs) . " on $interface, excluding $address" :
+            ($rules['message'] ?? $rules['status']) . (empty($msgs) ? '' : ' (created: ' . implode(', ', $msgs) . ')');
+        foreach ($missing as $dir) {
+            $result[$dir]['action'] = $rules['status'] == 'created' ? 'created' : 'incomplete';
+            $result[$dir]['pipe'] = DIRECTIONS[$dir]['pipe'];
+        }
+    } else {
+        $created = [];
+        $sequence = (int)$shaper->getMaxRuleSequence();
+        foreach ($missing as $dir) {
+            $props = DIRECTIONS[$dir];
+            $pipe_uuid = find_named($shaper->pipes->pipe, $props['pipe']);
+            $queue_uuid = $pipe_uuid === null ? null :
+                find_named($shaper->queues->queue, $props['queue'], function ($queue) use ($pipe_uuid) {
+                    return (string)$queue->pipe == $pipe_uuid;
+                });
+            if ($queue_uuid === null) {
+                finish(['status' => 'error', 'message' => "queue {$props['queue']} not found, no rules added"]);
+            }
+            $rule = $shaper->rules->rule->Add();
+            $rule->sequence = (string)(++$sequence);
+            $rule->interface = $interface;
+            $rule->proto = 'ip';
+            $rule->direction = $props['rule'];
+            if ($props['rule'] == 'in') {
+                $rule->destination = $address;
+                $rule->destination_not = '1';
+            } else {
+                $rule->source = $address;
+                $rule->source_not = '1';
+            }
+            $rule->target = $queue_uuid;
+            $rule->description = $props['rulename'];
+            $rule->origin = 'TrafficShaper';
+            $created[] = sprintf('rule "%s"', $props['rulename']);
+        }
+        $err = save_shaper($shaper) ?? shaper_apply();
+        if ($err !== null) {
+            finish(['status' => 'error', 'message' => $err]);
+        }
+        // remember the excluded address, so sync can follow a change (saved here, as the
+        // config of the create process predates these rules)
+        $mdl->shaper->address = $address;
+        $mdl->serializeToConfig();
+        Config::getInstance()->save();
+        $result = ['status' => 'created', 'message' => 'created ' . implode(', ', $created), 'created' => $created];
+    }
+}
+
+finish($result);

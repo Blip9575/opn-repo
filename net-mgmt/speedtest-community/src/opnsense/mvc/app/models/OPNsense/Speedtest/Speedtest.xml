@@ -1,8 +1,46 @@
 <model>
     <mount>//OPNsense/speedtest</mount>
+    <version>1.0.0</version>
     <description>
         Speedtest plugin
     </description>
     <items>
+        <shaper>
+            <enabled type="BooleanField">
+                <Default>0</Default>
+                <Required>Y</Required>
+            </enabled>
+            <interface type="InterfaceField">
+                <Default>wan</Default>
+                <Required>Y</Required>
+            </interface>
+            <threshold type="IntegerField">
+                <Default>90</Default>
+                <Required>Y</Required>
+                <MinimumValue>50</MinimumValue>
+                <MaximumValue>100</MaximumValue>
+                <ValidationMessage>The threshold must be between 50 and 100 percent.</ValidationMessage>
+            </threshold>
+            <probes type="IntegerField">
+                <Default>10</Default>
+                <Required>Y</Required>
+                <MinimumValue>1</MinimumValue>
+                <MaximumValue>1000</MaximumValue>
+                <ValidationMessage>The number of probes must be between 1 and 1000.</ValidationMessage>
+            </probes>
+            <minchange type="IntegerField">
+                <Default>10</Default>
+                <Required>Y</Required>
+                <MinimumValue>0</MinimumValue>
+                <MaximumValue>100</MaximumValue>
+                <ValidationMessage>The minimum change must be between 0 and 100 percent.</ValidationMessage>
+            </minchange>
+            <!-- internal: interface address the shaper rules exclude, kept current by "speedtest syncshaper" -->
+            <address type="NetworkField">
+                <Required>N</Required>
+                <NetMaskAllowed>N</NetMaskAllowed>
+                <AddressFamily>ipv4</AddressFamily>
+            </address>
+        </shaper>
     </items>
 </model>

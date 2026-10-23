@@ -29,7 +29,7 @@
                 </td>
                 <td style="width: 78%; text-align: right; background-color: inherit; border-top-width: 0px;">
                     <small>help </small>
-                    <i class="fa fa-toggle-off text-success" style="cursor: pointer;" id="show_all_help_page"></i>
+                    <i class="fa fa-toggle-off text-danger" style="cursor: pointer;" id="toggle_help_page"></i>
                 </td>
             </tr>
             <tr>
@@ -146,6 +146,31 @@
 
 </div>
 
+<div class="content-box" id="shaper">
+    <table class="table table-condensed">
+        <tbody>
+            <tr>
+                <td>
+                    <h2 style="margin-top:1ex;">{{ lang._('Traffic shaper') }}</h2>
+                </td>
+            </tr>
+        </tbody>
+    </table>
+    {{ partial("layout_partials/base_form",['fields':shaperForm,'id':'frm_shaper'])}}
+    <div class="col-md-12">
+        <hr/>
+        <button class="btn btn-primary" id="shaperSaveAct" type="button">
+            <b>{{ lang._('Save') }}</b> <i id="shaperSaveAct_progress"></i></button>
+        <button class="btn btn-default" id="shaperApplyAct" type="button">
+            <b>{{ lang._('Apply now') }}</b> <i id="shaperApplyAct_progress"></i></button>
+        <button class="btn btn-default" id="shaperCreateAct" type="button">
+            <b>{{ lang._('Create shaper') }}</b> <i id="shaperCreateAct_progress"></i></button>
+        <br/><br/>
+        <div id="shaper_result"></div>
+        <br/>
+    </div>
+</div>
+
 <div class="content-box" id="logs">
     <table id="grid-log" class="table table-condensed">
         <thead>
@@ -254,14 +279,44 @@
             });
     };
 
+    function shaper_result(r) {
+        var text = (r && r.message) ? r.message : "{{ lang._('No response') }}";
+        var cls = (r && (r.status == 'error' || r.status == 'disabled')) ? 'text-danger' : 'text-success';
+        $('#shaper_result').empty().append($('<span/>').addClass(cls).text(text));
+    };
+    // save the shaper settings first, then run the given action
+    function shaper_action(btn, url) {
+        $("#" + btn + "_progress").addClass("fa fa-spinner fa-pulse");
+        saveFormToEndpoint("/api/speedtest/shaper/set", 'frm_shaper', function() {
+            ajaxCall(url, {}, function(r, status) {
+                $("#" + btn + "_progress").removeClass("fa fa-spinner fa-pulse");
+                shaper_result(r);
+            });
+        }, true, function() {
+            $("#" + btn + "_progress").removeClass("fa fa-spinner fa-pulse");
+        });
+    };
+
     $(document).ready(function() {
         // run on doc load
         version_reload();
         stat_reload();
         log_reload();
+        // the shaper form has no info icons or "full help" switch, its help follows the page's help slider
+        $('#frm_shaper .control-label a.showhelp, #frm_shaper .control-label i.fa-info-circle').remove();
+        $('#show_all_help_frm_shaper').closest('tr').remove();
+        mapDataToFormUI({'frm_shaper': "/api/speedtest/shaper/get"}).done(function() {
+            $('.selectpicker').selectpicker('refresh');
+        });
 
     });
     $(function() {
+        // the help slider shows/hides all help on the page; core's help toggle only covers its own form
+        $("#toggle_help_page").click(function() {
+            var on = !$(this).hasClass("fa-toggle-on");
+            $(this).toggleClass("fa-toggle-on fa-toggle-off").toggleClass("text-success text-danger");
+            $('[data-for^="help_for"]').removeClass('hide').toggleClass('hidden', !on);
+        });
         // show/hide the log; core's advanced mode toggle only handles elements inside a form
         $("#toggle_log").click(function(e) {
             e.preventDefault();
@@ -340,6 +395,25 @@
                 stat_reload();
                 log_reload();
             });
+        });
+        $("#shaperSaveAct").click(function() {
+            $("#shaperSaveAct_progress").addClass("fa fa-spinner fa-pulse");
+            saveFormToEndpoint("/api/speedtest/shaper/set", 'frm_shaper', function() {
+                $("#shaperSaveAct_progress").removeClass("fa fa-spinner fa-pulse");
+            }, false, function() {
+                $("#shaperSaveAct_progress").removeClass("fa fa-spinner fa-pulse");
+            });
+        });
+        $("#shaperApplyAct").click(function() {
+            shaper_action('shaperApplyAct', "/api/speedtest/shaper/apply");
+        });
+        $("#shaperCreateAct").click(function() {
+            stdDialogConfirm(
+                "{{ lang._('Create shaper') }}",
+                "{{ lang._('Create the WAN_download_p and WAN_upload_p pipes, their queues and rules on the selected interface for each direction that has none? The rules exclude the interface address, so traffic of the firewall itself (and the speedtest) is not shaped.') }}",
+                "{{ lang._('Yes') }}", "{{ lang._('Cancel') }}", function() {
+                    shaper_action('shaperCreateAct', "/api/speedtest/shaper/create");
+                });
         });
         // Delete Log
         $("#deletelogAct").click(function() {

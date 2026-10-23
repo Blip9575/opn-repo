@@ -33,6 +33,7 @@ class IndexController extends \OPNsense\Base\IndexController
     public function indexAction()
     {
         // pick the template to serve to our users.
+        $this->view->shaperForm = $this->getForm('shaper');
         $this->view->pick('OPNsense/Speedtest/index');
     }
     public function installAction()
