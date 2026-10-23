@@ -24,8 +24,12 @@
     <table class="table table-condensed">
         <tbody>
             <tr>
-                <td>
-                    <h2 style="margin-top:1ex;">Statistics</h2>
+                <td style="white-space: nowrap;">
+                    <span style="margin-right: 2em;">
+                        <a href="#" id="toggle_advanced_page"><i class="fa fa-toggle-off fa-fw text-danger"></i></a>
+                        <small>{{ lang._('advanced mode') }}</small> <i class="fa fa-cog fa-sm fa-fw text-warning"></i>
+                    </span>
+                    <h2 style="margin-top:1ex; display: inline-block;">Statistics</h2>
                 </td>
                 <td style="width: 78%; text-align: right; background-color: inherit; border-top-width: 0px;">
                     <small>help </small>
@@ -132,7 +136,7 @@
     </div>
 </div>
 <small><div id="version"></div></small>
-<div class="hide" data-for="help_for_speedprobes">
+<div class="hide" id="speedtest_advanced">
 
     <a href="/ui/cron"><button class="btn btn-xs btn-primary" id="cronAct" type="button">
             <b> schedule in cron </b>
@@ -311,11 +315,18 @@
 
     });
     $(function() {
-        // the help slider shows/hides all help on the page; core's help toggle only covers its own form
+        // advanced mode shows/hides the extra buttons (cron, http/socket speedtest)
+        $("#toggle_advanced_page").click(function(e) {
+            e.preventDefault();
+            var icon = $(this).find('i');
+            icon.toggleClass("fa-toggle-on fa-toggle-off").toggleClass("text-success text-danger");
+            $('#speedtest_advanced').toggleClass('hide', !icon.hasClass("fa-toggle-on"));
+        });
+        // the help slider shows/hides the help of the shaper form; core's help toggle only covers its own form
         $("#toggle_help_page").click(function() {
             var on = !$(this).hasClass("fa-toggle-on");
             $(this).toggleClass("fa-toggle-on fa-toggle-off").toggleClass("text-success text-danger");
-            $('[data-for^="help_for"]').removeClass('hide').toggleClass('hidden', !on);
+            $('#frm_shaper [data-for^="help_for"]').toggleClass('hidden', !on);
         });
         // show/hide the log; core's advanced mode toggle only handles elements inside a form
         $("#toggle_log").click(function(e) {
