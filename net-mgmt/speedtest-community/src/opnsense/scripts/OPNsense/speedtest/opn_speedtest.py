@@ -213,8 +213,25 @@ try:
         print(json.dumps(out))
         quit()
     # keep stderr out of stdout, otherwise a warning or progress line from
-    # speedtest ends up in the json we are about to parse
-    result = json.loads(subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True).stdout.decode('utf-8'))
+    # speedtest ends up in the json we are about to parse; the binary can still
+    # print {"type":"log",...} lines or a bare {"error":...} on stdout
+    proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+    result = None
+    for line in proc.stdout.decode('utf-8').splitlines():
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(rec, dict) or rec.get('type') == 'log':
+            continue
+        if 'error' in rec:
+            print(json.dumps({'error': 'Speedtest failed: ' + str(rec['error'])}))
+            quit()
+        if rec.get('type', 'result') == 'result':
+            result = rec
+    if result is None:
+        print(json.dumps({'error': 'Speedtest failed: no result in output'}))
+        quit()
     # assembling the output json to be consistent regarless of what came back from speedtest
     out = {}
     if bin_version:
