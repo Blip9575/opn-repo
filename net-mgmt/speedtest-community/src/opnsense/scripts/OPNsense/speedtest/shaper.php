@@ -266,7 +266,7 @@ function sync_exclusion($mdl, $interface)
     return [
         'status' => $updated > 0 ? 'updated' : 'unchanged',
         'message' => $stored == '' ? "excluded address recorded as $current" :
-            sprintf('excluded address %s -> %s in %d rule(s)', $stored, $current, $updated),
+            sprintf('excluded address changed from %s to %s in %d rule(s)', $stored, $current, $updated),
     ];
 }
 
@@ -353,11 +353,11 @@ if ($action == 'set') {
             $pipe->bandwidth = (string)$targets[$dir]['bandwidth'];
             $pipe->bandwidthMetric = $targets[$dir]['metric'];
             $result[$dir]['action'] = 'updated';
-            $msgs[] = sprintf('%s %s: %.2f -> %.2f Mbit/s', $dir, $pipe->description, $current / 1000, $target / 1000);
+            $msgs[] = sprintf('%s %s: %.2f to %.2f Mbit/s', $dir, $pipe->description, $current / 1000, $target / 1000);
             $changed = true;
         } else {
             $result[$dir]['action'] = 'unchanged';
-            $msgs[] = sprintf('%s %s: %.2f Mbit/s kept (target %.2f, %.1f%% < %d%%)', $dir, $pipe->description, $current / 1000, $target / 1000, $diff, $minchange);
+            $msgs[] = sprintf('%s %s: %.2f Mbit/s kept (target %.2f, change %.1f%%, minimum %d%%)', $dir, $pipe->description, $current / 1000, $target / 1000, $diff, $minchange);
         }
     }
     $result['message'] = implode('; ', $msgs) . sprintf(' (average of %d results of the last %d day(s) x %d%%)', $avg['probes'], $days, $threshold);

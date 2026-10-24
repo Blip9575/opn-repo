@@ -18,6 +18,20 @@
                 <Default>0</Default>
                 <Required>Y</Required>
             </schedule>
+            <frequency type="IntegerField">
+                <Default>3</Default>
+                <Required>Y</Required>
+                <MinimumValue>1</MinimumValue>
+                <MaximumValue>6</MaximumValue>
+                <ValidationMessage>The frequency must be between 1 and 6 speedtests.</ValidationMessage>
+            </frequency>
+            <offset type="IntegerField">
+                <Default>3</Default>
+                <Required>Y</Required>
+                <MinimumValue>0</MinimumValue>
+                <MaximumValue>59</MaximumValue>
+                <ValidationMessage>The offset must be between 0 and 59 minutes.</ValidationMessage>
+            </offset>
             <threshold type="IntegerField">
                 <Default>90</Default>
                 <Required>Y</Required>

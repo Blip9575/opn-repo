@@ -3,6 +3,18 @@
         <id>speedtest.shaper.schedule</id>
         <label>Create scheduled speedtests</label>
         <type>checkbox</type>
-        <help>Adds a cron task that runs a speedtest at 01:23, 03:23 and 05:23</help>
+        <help>Adds a cron task that runs speedtests between 00:00 and 06:00</help>
+    </field>
+    <field>
+        <id>speedtest.shaper.frequency</id>
+        <label>Frequency</label>
+        <type>text</type>
+        <help>Number of speedtests between 00:00 and 06:00, spread evenly (1 to 6)</help>
+    </field>
+    <field>
+        <id>speedtest.shaper.offset</id>
+        <label>Schedule offset</label>
+        <type>text</type>
+        <help>Minutes past the hour the speedtests run at (0 to 59). The traffic shaper is set 15 minutes after the last speedtest</help>
     </field>
 </form>

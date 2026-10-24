@@ -43,12 +43,37 @@ class ShaperController extends ApiMutableModelControllerBase
     protected static $internalModelName = 'speedtest';
 
     /**
-     * cron tasks owned by the shaper settings: command => [setting, minutes, hours, description]
+     * cron tasks owned by the shaper settings: command => [setting, description]
      */
     private const CRON_JOBS = [
-        'speedtest run' => ['schedule', '23', '1,3,5', 'Run scheduled speedtest'],
-        'speedtest setshaper' => ['enabled', '53', '5', 'Set shaper bandwidth from speedtest results'],
+        'speedtest run' => ['schedule', 'Run scheduled speedtest'],
+        'speedtest setshaper' => ['enabled', 'Set shaper bandwidth from speedtest results'],
     ];
+
+    /**
+     * minutes after the last speedtest that the shaper is set
+     */
+    private const SHAPER_DELAY = 15;
+
+    /**
+     * cron times from frequency and offset: the speedtests spread over 00:00 - 06:00
+     * at "offset" minutes past the hour, the shaper SHAPER_DELAY minutes after the last
+     * @return array command => [minutes, hours]
+     */
+    private function cronTimes($settings)
+    {
+        $frequency = max(1, min(6, (int)(string)$settings->frequency));
+        $offset = max(0, min(59, (int)(string)$settings->offset));
+        $hours = [];
+        for ($i = 0; $i < $frequency; $i++) {
+            $hours[] = intdiv($i * 6, $frequency);
+        }
+        $shaper = end($hours) * 60 + $offset + self::SHAPER_DELAY;
+        return [
+            'speedtest run' => [(string)$offset, implode(',', $hours)],
+            'speedtest setshaper' => [(string)($shaper % 60), (string)intdiv($shaper, 60)],
+        ];
+    }
 
     /**
      * save the settings, then add or (en/dis)able the cron tasks that follow them
@@ -63,16 +88,18 @@ class ShaperController extends ApiMutableModelControllerBase
     }
 
     /**
-     * a task is created the first time its setting is enabled; afterwards only its
-     * enabled flag follows the setting, so a changed schedule is kept
+     * a task is created the first time its setting is enabled; afterwards its enabled
+     * flag follows the setting and its time follows frequency and offset
      */
     private function syncCron()
     {
         $settings = $this->getModel()->shaper;
+        $times = $this->cronTimes($settings);
         $cron = new Cron();
         $changed = false;
-        foreach (self::CRON_JOBS as $command => [$setting, $minutes, $hours, $description]) {
+        foreach (self::CRON_JOBS as $command => [$setting, $description]) {
             $enabled = (string)$settings->$setting == '1' ? '1' : '0';
+            [$minutes, $hours] = $times[$command];
             $job = null;
             foreach ($cron->jobs->job->iterateItems() as $item) {
                 if ((string)$item->origin == 'Speedtest' && (string)$item->command == $command) {
@@ -80,15 +107,17 @@ class ShaperController extends ApiMutableModelControllerBase
                     break;
                 }
             }
-            if ($job === null && $enabled == '1') {
+            if ($job === null) {
+                if ($enabled == '0') {
+                    continue;
+                }
                 $job = $cron->getNodeByReference('jobs.job.' . $cron->newDailyJob('Speedtest', $command, $description));
-                $job->minutes = $minutes;
-                $job->hours = $hours;
-                $job->enabled = '1';
-                $changed = true;
-            } elseif ($job !== null && (string)$job->enabled != $enabled) {
-                $job->enabled = $enabled;
-                $changed = true;
+            }
+            foreach (['enabled' => $enabled, 'minutes' => $minutes, 'hours' => $hours] as $field => $value) {
+                if ((string)$job->$field != $value) {
+                    $job->$field = $value;
+                    $changed = true;
+                }
             }
         }
         if ($changed && $cron->performValidation()->count() == 0) {
