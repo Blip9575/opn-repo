@@ -24,12 +24,7 @@
     <table class="table table-condensed">
         <tbody>
             <tr>
-                <td style="white-space: nowrap;">
-                    <span style="margin-right: 2em;">
-                        <a href="#" id="toggle_advanced_page"><i class="fa fa-toggle-off fa-fw text-danger"></i></a>
-                        <small>{{ lang._('advanced mode') }}</small> <i class="fa fa-cog fa-sm fa-fw text-warning"></i>
-                    </span>
-                </td>
+                <td></td>
                 <td style="width: 78%; text-align: right; background-color: inherit; border-top-width: 0px;">
                     <small>help </small>
                     <i class="fa fa-toggle-off text-danger" style="cursor: pointer;" id="toggle_help_page"></i>
@@ -115,13 +110,7 @@
 <h2>Run speedtest</h2>
 {# same markup as the core form of the Traffic shaper (layout_partials/base_form), so both boxes line up #}
 <div class="content-box">
-    <div id="checkingspeedtest">&nbsp;&nbsp;Locating speedtest module...</div>
-    <div id="nospeedtest" style="display:none">&nbsp;&nbsp;No installed speedtest modules found. Install
-        <button class="btn btn-xs btn-primary" id="cliAct" type="button"><b>speedtest-cli</b><i id="cliAct_progress"></i></button>
-    or
-        <button class="btn btn-xs btn-primary" id="binAct" type="button"><b>Ookla</b><i id="binAct_progress"></i></button>
-    </div>
-    <div class="canruntests" style="display:none">
+    <div>
         <div class="table-responsive form-inline">
         <table class="table table-striped table-condensed" style="table-layout: fixed; width: 100%;">
             <colgroup>
@@ -131,6 +120,20 @@
             </colgroup>
             <tbody>
                 <tr>
+                    <td><div class="control-label"><b>{{ lang._('Speedtest module') }}</b></div></td>
+                    <td>
+                        <span id="module_status">{{ lang._('Locating speedtest module...') }}</span>
+                        <div class="speedtest-help hidden">
+                            <small>{{ lang._('Speedtest by Ookla (installed from install.speedtest.net). Its licence and GDPR terms are accepted on your behalf when a test runs.') }}</small>
+                        </div>
+                        <pre id="module_output" style="display: none; margin-top: 1ex; max-height: 12em; overflow: auto;"></pre>
+                    </td>
+                    <td>
+                        <button class="btn btn-default" id="moduleInstallAct" type="button" style="display: none;">
+                            <b id="moduleInstallAct_label"></b> <i id="moduleInstallAct_progress"></i></button>
+                    </td>
+                </tr>
+                <tr class="canruntests" style="display: none;">
                     <td><div class="control-label"><b>{{ lang._('Server list') }}</b></div></td>
                     <td>
                         <select id="speedlist" class="form-control" style="width: 346px; max-width: 100%;">
@@ -145,7 +148,7 @@
                             <b>{{ lang._('Get server list') }}</b> <i id="serverlistAct_progress"></i></button>
                     </td>
                 </tr>
-                <tr>
+                <tr class="canruntests" style="display: none;">
                     <td><div class="control-label"><b>{{ lang._('Server id') }}</b></div></td>
                     <td>
                         <input type="text" id="serverid" name="serverid" class="form-control" size="50"
@@ -163,6 +166,7 @@
             </tbody>
         </table>
         </div>
+        <div class="canruntests" style="display: none;">
         {{ partial("layout_partials/base_form",['fields':scheduleForm,'id':'frm_schedule'])}}
         <div class="col-md-12">
             <hr/>
@@ -175,22 +179,8 @@
             <br/>
         </div>
         <div class="clearfix"></div>
+        </div>
     </div>
-</div>
-<small><div id="version_error" class="text-danger"></div></small>
-<div class="hide" id="speedtest_advanced">
-    <small><div id="version"></div></small>
-
-    <a href="/ui/cron"><button class="btn btn-xs btn-primary" id="cronAct" type="button">
-            <b> schedule in cron </b>
-    </button></a>
-    <button id="cli1Act" class="btn btn-xs" type="button">
-        <b>switch to http speedtest</b>
-    </button>
-    <button id="bin1Act" class="btn btn-xs" type="button">
-        <b>switch to socket speedtest</b>
-    </button><br>
-
 </div>
 
 <h2>{{ lang._('Traffic shaper') }}</h2>
@@ -306,29 +296,37 @@
             }
         });
     };
+    // the speedtest module row: what is installed, and the button to install or replace it
     function version_reload() {
         ajaxCall(url = "/api/speedtest/service/version", sendData = {}, callback = function(l, status) {
-            $('#checkingspeedtest').hide();
-            if (l.version=='none') {
-                $('#nospeedtest').show("div");
+            var text, error = false, button = '';
+            if (!l || (!l.version && !l.error)) {
+                text = "{{ lang._('No response') }}";
+                error = true;
             } else if (l.error) {
-                $('#version_error').text(l.error);
+                text = l.error;
+                error = true;
+                button = "{{ lang._('Reinstall Ookla') }}";
+            } else if (l.version == 'none') {
+                text = "{{ lang._('Not installed') }}";
+                error = true;
+                button = "{{ lang._('Install Ookla') }}";
+            } else if (l.version == 'cli') {
+                text = l.message + " {{ lang._('(no longer maintained)') }}";
+                button = "{{ lang._('Switch to Ookla') }}";
             } else {
-                $('.canruntests').show();
-                $('#version').text(l.message);
-                if (l.version=='binary') {
-                    $('#bin1Act').addClass('btn-success disabled')
-                    $('#bin1Act').removeClass('btn-primary')
-                    $('#cli1Act').removeClass('btn-success disabled')
-                    $('#cli1Act').addClass('btn-primary')
-                } else {
-                    $('#cli1Act').addClass('btn-success disabled')
-                    $('#cli1Act').removeClass('btn-primary')
-                    $('#bin1Act').removeClass('btn-success disabled')
-                    $('#bin1Act').addClass('btn-primary')
-                }
+                text = l.message;
             }
-            });
+            if (button !== '' && l && l.supported === false) {
+                text += " ({{ lang._('Ookla provides FreeBSD builds for x86_64 only') }})";
+                button = '';
+            }
+            $('#module_status').text(text).toggleClass('text-danger', error);
+            $('#moduleInstallAct_label').text(button);
+            $('#moduleInstallAct').toggle(button !== '');
+            // tests need a module; speedtest-cli still works until it is replaced
+            $('.canruntests').toggle(!!l && (l.version == 'binary' || l.version == 'cli'));
+        });
     };
 
     // run a speedtest (serverid empty: nearest server) and show its result
@@ -456,13 +454,6 @@
 
     });
     $(function() {
-        // advanced mode shows/hides the extra buttons (cron, http/socket speedtest)
-        $("#toggle_advanced_page").click(function(e) {
-            e.preventDefault();
-            var icon = $(this).find('i');
-            icon.toggleClass("fa-toggle-on fa-toggle-off").toggleClass("text-success text-danger");
-            $('#speedtest_advanced').toggleClass('hide', !icon.hasClass("fa-toggle-on"));
-        });
         // the help slider shows/hides all help on the page and stores it like core's "full help" switch
         $("#toggle_help_page").click(function() {
             page_help(!$(this).hasClass("fa-toggle-on"), true);
@@ -474,34 +465,20 @@
             icon.toggleClass("fa-toggle-on fa-toggle-off").toggleClass("text-success text-danger");
             $('.speedtest-log').toggle(icon.hasClass("fa-toggle-on"));
         });
-        // pressing button
-        $("#cliAct").click(function() {
-            ajaxCall(url = "/api/speedtest/service/installhttp/", sendData = {}, callback = function(r, status) {
-                version_reload();
-                $('#nospeedtest').hide();
-                $('.canruntests').show();
-            });
-        });
-        $("#binAct").click(function() {
-            ajaxCall(url = "/api/speedtest/service/installsocket/", sendData = {}, callback = function(r, status) {
-                version_reload();
-                $('#nospeedtest').hide();
-                $('.canruntests').show();
-            });
-        });
-        $("#cli1Act").click(function() {
-            ajaxCall(url = "/api/speedtest/service/installhttp/", sendData = {}, callback = function(r, status) {
-                version_reload();
-                $('#nospeedtest').hide();
-                $('.canruntests').show();
-            });
-        });
-        $("#bin1Act").click(function() {
-            ajaxCall(url = "/api/speedtest/service/installsocket/", sendData = {}, callback = function(r, status) {
-                version_reload();
-                $('#nospeedtest').hide();
-                $('.canruntests').show();
-            });
+        $("#moduleInstallAct").click(function() {
+            stdDialogConfirm(
+                $('#moduleInstallAct_label').text(),
+                "{{ lang._('Install the Ookla speedtest CLI from install.speedtest.net (replacing speedtest-cli if installed)?') }}",
+                "{{ lang._('Yes') }}", "{{ lang._('Cancel') }}", function() {
+                    $("#moduleInstallAct_progress").addClass("fa fa-spinner fa-pulse");
+                    $("#moduleInstallAct").prop('disabled', true);
+                    ajaxCall("/api/speedtest/service/installsocket", {}, function(r, status) {
+                        $("#moduleInstallAct_progress").removeClass("fa fa-spinner fa-pulse");
+                        $("#moduleInstallAct").prop('disabled', false);
+                        $('#module_output').text(r && r.output ? r.output : "{{ lang._('No response') }}").show();
+                        version_reload();
+                    });
+                });
         });
         // fetch the list of nearest servers on demand
         $("#serverlistAct").click(function() {

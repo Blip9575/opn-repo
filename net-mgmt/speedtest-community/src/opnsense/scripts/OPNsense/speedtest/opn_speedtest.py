@@ -40,6 +40,10 @@ from os import path
 
 # A wrapper around speedtest.py CLI: get arrguments (if any), run the test,
 # store it in cvs, mirror the output that came from the test
+def ookla_supported():
+    # Ookla publishes its FreeBSD CLI for x86_64 only
+    return os.uname().machine in ('amd64', 'x86_64')
+
 def is_int (n):
     try:
         int(n)
@@ -167,15 +171,16 @@ try:
         # speedtest-cli reports itself over two lines, the binary over one; don't
         # assume how many lines are there, warnings can end up in the output too
         lines = [line.strip() for line in version.splitlines() if line.strip()]
-        # show the tool and its version plus the module in use; the build hash and
-        # the OS the binary reports are kept in "raw" only
+        # show the tool and its version; the build hash and the OS the binary
+        # reports are kept in "raw" only
         if bin_version:
             line = next((l for l in lines if "Ookla" in l), lines[0])
             name = re.match(r"^(.*?Ookla\s+[\d.]+)", line)
-            out={"version":"binary", "message":(name.group(1) if name else line)+" (socket)", "raw":line}
+            out={"version":"binary", "message":name.group(1) if name else line, "raw":line}
         else:
             line = next((l for l in lines if l.startswith("speedtest-cli")), lines[0])
-            out={"version":"cli", "message":line+" (http)", "raw":' '.join(lines[:2])}
+            out={"version":"cli", "message":line, "raw":' '.join(lines[:2])}
+        out['supported'] = ookla_supported()
         print(json.dumps(out))
         quit()
 
@@ -274,7 +279,7 @@ try:
     # returning the assembled json for further processing
     print(json.dumps(out), file=sys.stdout)
 except FileNotFoundError:
-    out={'version':'none', 'message':'No speedtest package installed'}
+    out={'version':'none', 'message':'No speedtest package installed', 'supported':ookla_supported()}
     print(json.dumps(out))
 except subprocess.CalledProcessError as e:
     # report what speedtest actually complained about instead of guessing;

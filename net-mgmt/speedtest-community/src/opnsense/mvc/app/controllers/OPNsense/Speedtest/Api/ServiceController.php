@@ -74,12 +74,14 @@ class ServiceController extends ApiControllerBase
         return (new Backend())->configdRun("speedtest deletelog");
     }    
 
-    public function installhttpAction()
-    {
-        return (new Backend())->configdRun("speedtest install-http");
-    }    
+    /**
+     * install (or reinstall) the Ookla speedtest CLI, replacing speedtest-cli
+     */
     public function installsocketAction()
     {
-        return (new Backend())->configdRun("speedtest install-socket");
+        if (!$this->request->isPost()) {
+            return ['status' => 'error', 'output' => gettext('Use POST')];
+        }
+        return ['status' => 'done', 'output' => trim((new Backend())->configdRun("speedtest install-socket"))];
     }
 }
