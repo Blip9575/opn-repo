@@ -368,6 +368,8 @@
         $('#frm_shaper .control-label a.showhelp, #frm_shaper .control-label i.fa-info-circle').remove();
         $('#frm_schedule .control-label a.showhelp, #frm_schedule .control-label i.fa-info-circle').remove();
         $('#show_all_help_frm_shaper, #show_all_help_frm_schedule').closest('tr').remove();
+        // "Create shaper" next to the interface it creates the shaper on, in the column of "run speedtest"
+        $('[id="row_speedtest.shaper.interface"] > td:last').prepend($('#shaperCreateAct'));
         mapDataToFormUI({'frm_shaper': "/api/speedtest/shaper/get", 'frm_schedule': "/api/speedtest/shaper/get"}).done(function() {
             $('.selectpicker').selectpicker('refresh');
         });
