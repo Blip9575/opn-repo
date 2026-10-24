@@ -68,85 +68,107 @@
     </table>
 </div>
 <h2>Run speedtest</h2>
+{# same markup as the core form of the Traffic shaper (layout_partials/base_form), so both boxes line up #}
 <div class="content-box">
-    <div class="content-box-main collapse in" id="system_information-container" style="display:inline">
-        <table class="table table-condensed">
-            <thead>
-                <tr class="canruntests" style="display:none">
-                    <td style="width:35%">
-                        <select id="speedlist" class="form-control">
+    <div id="checkingspeedtest">&nbsp;&nbsp;Locating speedtest module...</div>
+    <div id="nospeedtest" style="display:none">&nbsp;&nbsp;No installed speedtest modules found. Install
+        <button class="btn btn-xs btn-primary" id="cliAct" type="button"><b>speedtest-cli</b><i id="cliAct_progress"></i></button>
+    or
+        <button class="btn btn-xs btn-primary" id="binAct" type="button"><b>Ookla</b><i id="binAct_progress"></i></button>
+    </div>
+    <div class="canruntests" style="display:none">
+        <div class="table-responsive form-inline">
+        <table class="table table-striped table-condensed" style="table-layout: fixed; width: 100%;">
+            <colgroup>
+                <col style="width: 25%;" />
+                <col style="width: 40%;" />
+                <col style="width: 35%;" />
+            </colgroup>
+            <tbody>
+                <tr>
+                    <td><div class="control-label"><b>{{ lang._('Server list') }}</b></div></td>
+                    <td>
+                        <select id="speedlist" class="form-control" style="width: 346px; max-width: 100%;">
                             <option value="">{{ lang._('automatic (nearest server)') }}</option>
                         </select>
-                        <small class="text-muted speedtest-help hidden">{{ lang._('Populates server list. Defaults to nearest.') }}</small>
+                        <div class="speedtest-help hidden">
+                            <small>{{ lang._('Populates server list. Defaults to nearest.') }}</small>
+                        </div>
                     </td>
-                    <td><button class="btn btn-default" id="serverlistAct" type="button">
-                <b>{{ lang._('Get server list') }}</b> <i id="serverlistAct_progress"></i></button></td>
-                </tr>
-                <tr class="canruntests" style="display:none">
                     <td>
-                        <input type="text" id="serverid" name="serverid" class="form-control"
-                               inputmode="numeric" placeholder="{{ lang._('server id (optional)') }}">
-                        <small class="text-muted speedtest-help hidden">
-                            {{ lang._('Leave empty to let speedtest pick the nearest server, or enter the id of a specific server.') }}
-                        </small>
+                        <button class="btn btn-default" id="serverlistAct" type="button">
+                            <b>{{ lang._('Get server list') }}</b> <i id="serverlistAct_progress"></i></button>
+                    </td>
+                </tr>
+                <tr>
+                    <td><div class="control-label"><b>{{ lang._('Server id') }}</b></div></td>
+                    <td>
+                        <input type="text" id="serverid" name="serverid" class="form-control" size="50"
+                               inputmode="numeric" placeholder="{{ lang._('optional') }}">
+                        <div class="speedtest-help hidden">
+                            <small>{{ lang._('Leave empty to let speedtest pick the nearest server, or enter the id of a specific server.') }}</small>
+                        </div>
                         <small id="serverid_error" class="text-danger" style="display:none"></small>
                     </td>
-                    <td><button class="btn btn-primary" id="reportAct" type="button">
-                <b>{{ lang._('run speedtest') }}</b> <i id="reportAct_progress"></i></button></td>
-                </tr>
-                <tr class="canruntests" style="display:none">
-                    <td colspan="2">
-                        {{ partial("layout_partials/base_form",['fields':scheduleForm,'id':'frm_schedule'])}}
-                        <button class="btn btn-primary" id="scheduleSaveAct" type="button">
-                            <b>{{ lang._('Save') }}</b> <i id="scheduleSaveAct_progress"></i></button>
-                        <button class="btn btn-default" id="scheduleApplyAct" type="button">
-                            <b>{{ lang._('Apply now') }}</b> <i id="scheduleApplyAct_progress"></i></button>
-                    </td>
-                </tr>
-                <tr>
-                    <div id="checkingspeedtest">&nbsp;&nbsp;Locating speedtest module...</div>
-                    <div id="nospeedtest" style="display:none">&nbsp;&nbsp;No installed speedtest modules found. Install 
-                        <button class="btn btn-xs btn-primary" id="cliAct" type="button"><b>speedtest-cli</b><i id="cliAct_progress"></i></button>
-                    or 
-                        <button class="btn btn-xs btn-primary" id="binAct" type="button"><b>Ookla</b><i id="binAct_progress"></i></button>
-                    </div>
-                </tr>
-            </thead>
-            <tbody id="test_results" style="display:none">
-                <tr>
-                    <td>Download speed</td>
-                    <td id="dlspeed">0 Mbps</td>
-                </tr>
-                <tr>
-                    <td>Upload speed</td>
-                    <td id="ulspeed">0 Mbps</td>
-                </tr>
-                <tr>
-                    <td>Latency (ping)</td>
-                    <td id="latency">0 ms</td>
-                </tr>
-                <tr>
-                    <td>Speedtest server</td>
                     <td>
-                        <div id="ISP1"></div>
-                        <div id="ISP2"></div>
-                        <div id="ISP3"></div>
-                    </td>
-                </tr>
-                <tr>
-                    <td>Client IP:</td>
-                    <td>
-                        <div id="client"></div>
-                    </td>
-                </tr>
-                <tr>
-                    <td>Result id</td>
-                    <td>
-                        <div id="result"></div>
+                        <button class="btn btn-primary" id="reportAct" type="button">
+                            <b>{{ lang._('run speedtest') }}</b> <i id="reportAct_progress"></i></button>
                     </td>
                 </tr>
             </tbody>
         </table>
+        </div>
+        {{ partial("layout_partials/base_form",['fields':scheduleForm,'id':'frm_schedule'])}}
+        <div class="col-md-12">
+            <hr/>
+            <button class="btn btn-primary" id="scheduleSaveAct" type="button">
+                <b>{{ lang._('Save') }}</b> <i id="scheduleSaveAct_progress"></i></button>
+            <button class="btn btn-default" id="scheduleApplyAct" type="button">
+                <b>{{ lang._('Apply now') }}</b> <i id="scheduleApplyAct_progress"></i></button>
+            <br/><br/>
+        </div>
+        <div class="clearfix"></div>
+    </div>
+    <div class="table-responsive">
+    <table class="table table-striped table-condensed" style="table-layout: fixed; width: 100%;">
+            <colgroup>
+                <col style="width: 25%;" />
+                <col style="width: 40%;" />
+                <col style="width: 35%;" />
+            </colgroup>
+        <tbody id="test_results" style="display:none">
+                <tr>
+                    <td><div class="control-label"><b>{{ lang._('Download speed') }}</b></div></td>
+                    <td><span id="dlspeed">0 Mbps</span></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td><div class="control-label"><b>{{ lang._('Upload speed') }}</b></div></td>
+                    <td><span id="ulspeed">0 Mbps</span></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td><div class="control-label"><b>{{ lang._('Latency (ping)') }}</b></div></td>
+                    <td><span id="latency">0 ms</span></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td><div class="control-label"><b>{{ lang._('Speedtest server') }}</b></div></td>
+                    <td><div id="ISP1"></div><div id="ISP2"></div><div id="ISP3"></div></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td><div class="control-label"><b>{{ lang._('Client IP') }}</b></div></td>
+                    <td><div id="client"></div></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td><div class="control-label"><b>{{ lang._('Result id') }}</b></div></td>
+                    <td><div id="result"></div></td>
+                    <td></td>
+                </tr>
+        </tbody>
+    </table>
     </div>
 </div>
 <small><div id="version_error" class="text-danger"></div></small>
