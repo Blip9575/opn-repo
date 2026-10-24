@@ -396,10 +396,10 @@ function mss_status($interface)
     $result = ['interface' => $interface, 'mtu' => $link['mtu'], 'mss' => $mss];
     if (is_numeric($mss) && (int)$mss <= $link['mtu']) {
         $result['status'] = 'on';
-        $result['message'] = sprintf('on (TCP MSS %d, MTU %d)', (int)$mss - TCPIP_HEADERS, $link['mtu']);
+        $result['message'] = sprintf('Enabled (TCP MSS %d, MTU %d)', (int)$mss - TCPIP_HEADERS, $link['mtu']);
     } elseif ($link['mtu'] >= 1500 && !is_numeric($mss)) {
         $result['status'] = 'unneeded';
-        $result['message'] = sprintf('not needed (MTU %d)', $link['mtu']);
+        $result['message'] = sprintf('N/A (MTU %d)', $link['mtu']);
     } else {
         $result['status'] = 'missing';
         $result['message'] = is_numeric($mss) ?
