@@ -335,7 +335,11 @@
                     $("#ISP2").text(r.servername);
                     $("#ISP3").text(r.country);
                     $("#client").text(r.clientip);
-                    $("#result").html("<a href=\"" + r.link + "\"  target=\"_blank\">" + r.link + "</a>");
+                    if (r.link) {
+                        $("#result").empty().append($('<a target="_blank"/>').attr('href', r.link).text(r.link));
+                    } else {
+                        $("#result").text("{{ lang._('not shared') }}");
+                    }
                 }
                 stat_reload();
                 log_reload();

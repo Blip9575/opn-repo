@@ -102,7 +102,7 @@ try:
             'download': row[5],
             'upload': row[6],
             'latency': row[7],
-            'url': row[8]
+            'url': row[8] if len(row) > 8 else ''
         }
         print(json.dumps(out))
         quit()
@@ -243,7 +243,8 @@ try:
         out['latency'] = round(result['ping']['latency'],2)
         out['download'] = round(result['download']['bandwidth']/125000,2)
         out['upload'] = round(result['upload']['bandwidth']/125000,2)
-        out['link'] = result['result']['url']
+        # the share url is missing when the result was not uploaded to speedtest.net
+        out['link'] = (result.get('result') or {}).get('url') or ''
     else:
         out['timestamp'] = result['timestamp'][:-8]+'Z'
         out['clientip'] = result['client']['ip']
@@ -253,7 +254,9 @@ try:
         out['latency'] = round(result['ping'],2)
         out['download'] = round(result['download']/1000000,2)
         out['upload'] = round(result['upload']/1000000,2)
-        out['link'] = result['share'][:-4]
+        # --share returns the url of the result image (.png); empty when sharing failed
+        share = result.get('share') or ''
+        out['link'] = share[:-4] if share.endswith('.png') else share
     # datetime in CSV uses different format; cut the string down to seconds so
     # fractional seconds or a timezone offset don't break the conversion
     csvtime = datetime.strptime(out['timestamp'][:19], "%Y-%m-%dT%H:%M:%S").timestamp()
