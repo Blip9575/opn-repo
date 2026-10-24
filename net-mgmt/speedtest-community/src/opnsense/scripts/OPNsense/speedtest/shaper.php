@@ -30,7 +30,7 @@
 /*
  * Set the traffic shaper pipes of an interface from the speedtest results.
  *
- *   shaper.php set     average the last N results, scale by the threshold and
+ *   shaper.php set     average the results of the last N days, scale by the threshold and
  *                      update the pipes when they differ by the minimum change
  *   shaper.php create  create pipes, queues and rules on the interface for the
  *                      directions that have none yet
@@ -57,6 +57,7 @@ use OPNsense\TrafficShaper\TrafficShaper;
 const CSV_FILE = '/usr/local/opnsense/scripts/OPNsense/speedtest/speedtest.csv';
 const LOCK_FILE = '/tmp/speedtest_shaper.lock';
 // speedtest.csv columns
+const CSV_TIMESTAMP = 0;
 const CSV_DOWNLOAD = 5;
 const CSV_UPLOAD = 6;
 
@@ -89,20 +90,20 @@ function finish($result)
 }
 
 /**
- * average download and upload (Mbit/s) of the last $count results
+ * average download and upload (Mbit/s) of the results of the last $days days
  */
-function speedtest_average($count)
+function speedtest_average($days)
 {
+    // the csv timestamp is the UTC time read as local time, compare in the same terms
+    $since = time() - (int)date('Z') - $days * 86400;
     $rows = [];
     if (($fh = @fopen(CSV_FILE, 'r')) !== false) {
         fgetcsv($fh, 0, ',', '"', '\\'); // header
         while (($row = fgetcsv($fh, 0, ',', '"', '\\')) !== false) {
-            if (isset($row[CSV_UPLOAD]) && is_numeric($row[CSV_DOWNLOAD]) && is_numeric($row[CSV_UPLOAD]) &&
+            if (isset($row[CSV_UPLOAD]) && is_numeric($row[CSV_TIMESTAMP]) && $row[CSV_TIMESTAMP] >= $since &&
+                is_numeric($row[CSV_DOWNLOAD]) && is_numeric($row[CSV_UPLOAD]) &&
                 $row[CSV_DOWNLOAD] > 0 && $row[CSV_UPLOAD] > 0) {
                 $rows[] = $row;
-                if (count($rows) > $count) {
-                    array_shift($rows);
-                }
             }
         }
         fclose($fh);
@@ -292,11 +293,12 @@ if ($sync !== null && $sync['status'] == 'error') {
     finish($sync);
 }
 
-$avg = speedtest_average((int)(string)$settings->probes);
+$days = (int)(string)$settings->days;
+$avg = speedtest_average($days);
 if ($avg === null) {
-    finish(['status' => 'error', 'message' => 'no speedtest results to average']);
+    finish(['status' => 'error', 'message' => sprintf('no speedtest results of the last %d day(s) to average', $days)]);
 }
-$result = ['status' => 'unchanged', 'interface' => $interface, 'probes' => $avg['probes'], 'threshold' => $threshold];
+$result = ['status' => 'unchanged', 'interface' => $interface, 'days' => $days, 'probes' => $avg['probes'], 'threshold' => $threshold];
 $targets = [];
 foreach (DIRECTIONS as $dir => $props) {
     $targets[$dir] = max(1, (int)round($avg[$dir] * 1000 * $threshold / 100));
@@ -338,7 +340,7 @@ if ($action == 'set') {
             $msgs[] = sprintf('%s %s: %d Kbit/s kept (target %d, %.1f%% < %d%%)', $dir, $pipe->description, $current, $targets[$dir], $diff, $minchange);
         }
     }
-    $result['message'] = implode('; ', $msgs) . sprintf(' (average of %d probes x %d%%)', $avg['probes'], $threshold);
+    $result['message'] = implode('; ', $msgs) . sprintf(' (average of %d results of the last %d day(s) x %d%%)', $avg['probes'], $days, $threshold);
     if ($sync['status'] == 'updated') {
         $result['message'] .= '; ' . $sync['message'];
     }

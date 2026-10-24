@@ -30,6 +30,8 @@ namespace OPNsense\Speedtest\Api;
 
 use OPNsense\Base\ApiMutableModelControllerBase;
 use OPNsense\Core\Backend;
+use OPNsense\Core\Config;
+use OPNsense\Cron\Cron;
 
 /**
  * shaper settings (get/set) and actions; kept apart from the service
@@ -39,6 +41,62 @@ class ShaperController extends ApiMutableModelControllerBase
 {
     protected static $internalModelClass = '\OPNsense\Speedtest\Speedtest';
     protected static $internalModelName = 'speedtest';
+
+    /**
+     * cron tasks owned by the shaper settings: command => [setting, minutes, hours, description]
+     */
+    private const CRON_JOBS = [
+        'speedtest run' => ['schedule', '23', '1,3,5', 'Run scheduled speedtest'],
+        'speedtest setshaper' => ['enabled', '53', '5', 'Set shaper bandwidth from speedtest results'],
+    ];
+
+    /**
+     * save the settings, then add or (en/dis)able the cron tasks that follow them
+     */
+    public function setAction()
+    {
+        $result = parent::setAction();
+        if (($result['result'] ?? '') == 'saved') {
+            $this->syncCron();
+        }
+        return $result;
+    }
+
+    /**
+     * a task is created the first time its setting is enabled; afterwards only its
+     * enabled flag follows the setting, so a changed schedule is kept
+     */
+    private function syncCron()
+    {
+        $settings = $this->getModel()->shaper;
+        $cron = new Cron();
+        $changed = false;
+        foreach (self::CRON_JOBS as $command => [$setting, $minutes, $hours, $description]) {
+            $enabled = (string)$settings->$setting == '1' ? '1' : '0';
+            $job = null;
+            foreach ($cron->jobs->job->iterateItems() as $item) {
+                if ((string)$item->origin == 'Speedtest' && (string)$item->command == $command) {
+                    $job = $item;
+                    break;
+                }
+            }
+            if ($job === null && $enabled == '1') {
+                $job = $cron->getNodeByReference('jobs.job.' . $cron->newDailyJob('Speedtest', $command, $description));
+                $job->minutes = $minutes;
+                $job->hours = $hours;
+                $job->enabled = '1';
+                $changed = true;
+            } elseif ($job !== null && (string)$job->enabled != $enabled) {
+                $job->enabled = $enabled;
+                $changed = true;
+            }
+        }
+        if ($changed && $cron->performValidation()->count() == 0) {
+            $cron->serializeToConfig();
+            Config::getInstance()->save();
+            (new Backend())->configdRun('cron restart');
+        }
+    }
 
     /**
      * set the shaper pipes from the speedtest average

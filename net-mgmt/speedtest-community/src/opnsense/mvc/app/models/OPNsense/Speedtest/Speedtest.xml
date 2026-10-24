@@ -14,6 +14,10 @@
                 <Default>wan</Default>
                 <Required>Y</Required>
             </interface>
+            <schedule type="BooleanField">
+                <Default>0</Default>
+                <Required>Y</Required>
+            </schedule>
             <threshold type="IntegerField">
                 <Default>90</Default>
                 <Required>Y</Required>
@@ -21,15 +25,15 @@
                 <MaximumValue>100</MaximumValue>
                 <ValidationMessage>The threshold must be between 50 and 100 percent.</ValidationMessage>
             </threshold>
-            <probes type="IntegerField">
-                <Default>10</Default>
+            <days type="IntegerField">
+                <Default>1</Default>
                 <Required>Y</Required>
                 <MinimumValue>1</MinimumValue>
-                <MaximumValue>1000</MaximumValue>
-                <ValidationMessage>The number of probes must be between 1 and 1000.</ValidationMessage>
-            </probes>
+                <MaximumValue>30</MaximumValue>
+                <ValidationMessage>The number of days must be between 1 and 30.</ValidationMessage>
+            </days>
             <minchange type="IntegerField">
-                <Default>10</Default>
+                <Default>5</Default>
                 <Required>Y</Required>
                 <MinimumValue>0</MinimumValue>
                 <MaximumValue>100</MaximumValue>

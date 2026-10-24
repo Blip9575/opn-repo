@@ -150,16 +150,8 @@
 
 </div>
 
+<h2>{{ lang._('Traffic shaper') }}</h2>
 <div class="content-box" id="shaper">
-    <table class="table table-condensed">
-        <tbody>
-            <tr>
-                <td>
-                    <h2 style="margin-top:1ex;">{{ lang._('Traffic shaper') }}</h2>
-                </td>
-            </tr>
-        </tbody>
-    </table>
     {{ partial("layout_partials/base_form",['fields':shaperForm,'id':'frm_shaper'])}}
     <div class="col-md-12">
         <hr/>
