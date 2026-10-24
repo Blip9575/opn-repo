@@ -366,8 +366,8 @@
     function mss_reload() {
         ajaxGet("/api/speedtest/shaper/mss", {}, function(r, status) {
             var missing = r && r.status == 'missing';
-            $('#mss_status').attr('class', missing ? 'text-danger' : '')
-                .text(r && r.message ? r.message : "{{ lang._('No response') }}");
+            $('#mss_status').toggleClass('text-danger', missing)
+                .val(r && r.message ? r.message : "{{ lang._('No response') }}");
             $('#mssSetAct').toggle(missing);
         });
     };
@@ -439,7 +439,9 @@
         // MSS clamping status (not a setting of its own) below the DSL type, button in the same column
         $('[id="row_speedtest.shaper.dsltype"]').after($('<tr id="row_mss"/>')
             .append($('<td/>').append($('<div class="control-label"/>').append($('<b/>').text("{{ lang._('MSS clamping') }}"))))
-            .append($('<td/>').append($('<span id="mss_status"/>'))
+            // read-only text box, like the other fields of the form
+            .append($('<td/>').append($('<input type="text" id="mss_status" class="form-control" size="50" readonly="readonly"/>')
+                    .attr('aria-label', "{{ lang._('MSS clamping') }}"))
                 .append($('<div class="hidden" data-for="help_for_mss"/>').append($('<small/>')
                     .text("{{ lang._('The WAN interface clamps TCP to its MTU minus 40, needed when the MTU is below 1500 (PPPoE). Set MSS clamping sets the MSS of the WAN interface to its MTU.') }}"))))
             .append($('<td/>').append($('#mssSetAct'))));
