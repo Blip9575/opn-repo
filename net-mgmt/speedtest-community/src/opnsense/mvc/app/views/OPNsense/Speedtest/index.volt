@@ -373,6 +373,28 @@
             $('#mssSetAct').toggle(missing);
         });
     };
+    // help on the page (server fields, schedule, shaper form, MSS row), shown or hidden together;
+    // follows core's "full help" preset of the session, which core already applied to the forms
+    function page_help(on, store) {
+        $("#toggle_help_page").toggleClass("fa-toggle-on", on).toggleClass("fa-toggle-off", !on)
+            .toggleClass("text-success", on).toggleClass("text-danger", !on);
+        $('#frm_shaper [data-for^="help_for"], #frm_schedule [data-for^="help_for"], .speedtest-help')
+            .toggleClass('hidden', !on).toggleClass('show', on);
+        if (store) {
+            try {
+                sessionStorage.setItem('all_help_preset', on ? 1 : 0);
+            } catch (e) {
+                // no session storage: the setting only lasts for this page
+            }
+        }
+    };
+    function help_preset() {
+        try {
+            return sessionStorage.getItem('all_help_preset') === "1";
+        } catch (e) {
+            return false;
+        }
+    };
     function shaper_result(r) {
         var text = (r && r.message) ? r.message : "{{ lang._('No response') }}";
         var cls = (r && (r.status == 'error' || r.status == 'disabled')) ? 'text-danger' : 'text-success';
@@ -424,6 +446,7 @@
                     .text("{{ lang._('The WAN interface clamps TCP to its MTU minus 40, needed when the MTU is below 1500 (PPPoE). Set MSS clamping sets the MSS of the WAN interface to its MTU.') }}"))))
             .append($('<td/>').append($('#mssSetAct'))));
         mss_reload();
+        page_help(help_preset(), false);
         mapDataToFormUI({'frm_shaper': "/api/speedtest/shaper/get", 'frm_schedule': "/api/speedtest/shaper/get"}).done(function() {
             $('.selectpicker').selectpicker('refresh');
             shaper_saved_enabled = shaper_enabled();
@@ -440,11 +463,9 @@
             icon.toggleClass("fa-toggle-on fa-toggle-off").toggleClass("text-success text-danger");
             $('#speedtest_advanced').toggleClass('hide', !icon.hasClass("fa-toggle-on"));
         });
-        // the help slider shows/hides the help on the page (server fields, shaper form); core's help toggle only covers its own form
+        // the help slider shows/hides all help on the page and stores it like core's "full help" switch
         $("#toggle_help_page").click(function() {
-            var on = !$(this).hasClass("fa-toggle-on");
-            $(this).toggleClass("fa-toggle-on fa-toggle-off").toggleClass("text-success text-danger");
-            $('#frm_shaper [data-for^="help_for"], #frm_schedule [data-for^="help_for"], .speedtest-help').toggleClass('hidden', !on);
+            page_help(!$(this).hasClass("fa-toggle-on"), true);
         });
         // show/hide the log; core's advanced mode toggle only handles elements inside a form
         $("#toggle_log").click(function(e) {
