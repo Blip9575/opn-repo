@@ -62,12 +62,19 @@
                 </td>
             </tr>
         </tbody>
-        <tbody id="test_results" style="display:none">
-            <tr>
-                <td colspan="3" style="border-top: 0;">
-                    <h2 style="margin-top:1ex;">{{ lang._('Last speedtest') }}</h2>
-                </td>
-            </tr>
+    </table>
+</div>
+{# the last test, hidden until one ran; heading above its own box like the others #}
+<div id="test_results" style="display:none">
+<h2>{{ lang._('Last speedtest') }}</h2>
+<div class="content-box">
+    <table class="table table-condensed" style="table-layout: fixed; width: 100%;">
+        <colgroup>
+            <col style="width: 25%;" />
+            <col style="width: 40%;" />
+            <col style="width: 35%;" />
+        </colgroup>
+        <tbody>
             <tr>
                 <td>Download speed:</td>
                 <td colspan="2" style="font-weight: bold;">
@@ -108,6 +115,7 @@
             </tr>
         </tbody>
     </table>
+</div>
 </div>
 <h2>Run speedtest</h2>
 {# same markup as the core form of the Traffic shaper (layout_partials/base_form), so both boxes line up #}
@@ -346,7 +354,7 @@
         $("#" + btn + "_progress").addClass("fa fa-spinner fa-pulse");
         ajaxCall(url = "/api/speedtest/service/run/" + (serverid === '' ? '0' : serverid), sendData = {}, callback = function(r, status) {
             $("#" + btn + "_progress").removeClass("fa fa-spinner fa-pulse");
-            $("#test_results").attr("style", "display:content");
+            $("#test_results").show();
             if (r.error) {
                 $("#dlspeed").text(r.error);
                 $("#ulspeed").text("");
