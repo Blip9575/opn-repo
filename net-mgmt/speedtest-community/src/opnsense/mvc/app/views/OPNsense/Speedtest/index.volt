@@ -126,6 +126,8 @@
             <button class="btn btn-default" id="scheduleApplyAct" type="button">
                 <b>{{ lang._('Apply now') }}</b> <i id="scheduleApplyAct_progress"></i></button>
             <br/><br/>
+            <div id="schedule_result"></div>
+            <br/>
         </div>
         <div class="clearfix"></div>
     </div>
@@ -480,7 +482,7 @@
                 $("#shaperSaveAct_progress").removeClass("fa fa-spinner fa-pulse");
             });
         });
-        // saving adds or (en/dis)ables the cron task of the scheduled speedtests
+        // Save only stores the schedule, Apply now also puts it in cron (it never runs a speedtest)
         $("#scheduleSaveAct").click(function() {
             $("#scheduleSaveAct_progress").addClass("fa fa-spinner fa-pulse");
             saveFormToEndpoint("/api/speedtest/shaper/set", 'frm_schedule', function() {
@@ -489,11 +491,18 @@
                 $("#scheduleSaveAct_progress").removeClass("fa fa-spinner fa-pulse");
             });
         });
-        // save, then run the scheduled speedtest (nearest server) now
         $("#scheduleApplyAct").click(function() {
+            $("#scheduleApplyAct_progress").addClass("fa fa-spinner fa-pulse");
             saveFormToEndpoint("/api/speedtest/shaper/set", 'frm_schedule', function() {
-                run_speedtest('', 'scheduleApplyAct');
-            }, true);
+                ajaxCall("/api/speedtest/shaper/schedule", {}, function(r, status) {
+                    $("#scheduleApplyAct_progress").removeClass("fa fa-spinner fa-pulse");
+                    var ok = r && r.status == 'ok';
+                    $('#schedule_result').empty().append($('<span/>').addClass(ok ? 'text-success' : 'text-danger')
+                        .text(r && r.message ? r.message : "{{ lang._('No response') }}"));
+                });
+            }, true, function() {
+                $("#scheduleApplyAct_progress").removeClass("fa fa-spinner fa-pulse");
+            });
         });
         $("#shaperApplyAct").click(function() {
             shaper_action('shaperApplyAct', "/api/speedtest/shaper/apply");

@@ -76,28 +76,57 @@ class ShaperController extends ApiMutableModelControllerBase
     }
 
     /**
-     * save the settings, then add or (en/dis)able the cron tasks that follow them
+     * save the settings; a save of the shaper form ("enabled" posted) also updates the
+     * shaper's cron task, the speedtest schedule is only applied by scheduleAction
      */
     public function setAction()
     {
         $result = parent::setAction();
-        if (($result['result'] ?? '') == 'saved') {
-            $this->syncCron();
+        $posted = $this->request->getPost(static::$internalModelName);
+        if (($result['result'] ?? '') == 'saved' && isset($posted['shaper']['enabled'])) {
+            $this->syncCron(['speedtest setshaper']);
         }
         return $result;
+    }
+
+    /**
+     * apply the saved speedtest schedule (and the shaper time that follows it) to cron
+     */
+    public function scheduleAction()
+    {
+        if (!$this->request->isPost()) {
+            return ['status' => 'error', 'message' => gettext('Use POST')];
+        }
+        if (!$this->syncCron(array_keys(self::CRON_JOBS))) {
+            return ['status' => 'error', 'message' => gettext('The cron tasks could not be saved')];
+        }
+        $settings = $this->getModel()->shaper;
+        $times = [];
+        foreach ($this->cronTimes($settings) as $command => [$minutes, $hours]) {
+            $times[$command] = implode(', ', array_map(function ($hour) use ($minutes) {
+                return sprintf('%02d:%02d', $hour, $minutes);
+            }, explode(',', $hours)));
+        }
+        return ['status' => 'ok', 'message' => sprintf(
+            gettext('Speedtests at %s (%s); shaper set at %s (%s)'),
+            $times['speedtest run'],
+            (string)$settings->schedule == '1' ? gettext('enabled') : gettext('disabled'),
+            $times['speedtest setshaper'],
+            (string)$settings->enabled == '1' ? gettext('enabled') : gettext('disabled')
+        )];
     }
 
     /**
      * a task is created the first time its setting is enabled; afterwards its enabled
      * flag follows the setting and its time follows frequency and offset
      */
-    private function syncCron()
+    private function syncCron($commands)
     {
         $settings = $this->getModel()->shaper;
         $times = $this->cronTimes($settings);
         $cron = new Cron();
         $changed = false;
-        foreach (self::CRON_JOBS as $command => [$setting, $description]) {
+        foreach (array_intersect_key(self::CRON_JOBS, array_flip($commands)) as $command => [$setting, $description]) {
             $enabled = (string)$settings->$setting == '1' ? '1' : '0';
             [$minutes, $hours] = $times[$command];
             $job = null;
@@ -120,11 +149,16 @@ class ShaperController extends ApiMutableModelControllerBase
                 }
             }
         }
-        if ($changed && $cron->performValidation()->count() == 0) {
-            $cron->serializeToConfig();
-            Config::getInstance()->save();
-            (new Backend())->configdRun('cron restart');
+        if (!$changed) {
+            return true;
         }
+        if ($cron->performValidation()->count() > 0) {
+            return false;
+        }
+        $cron->serializeToConfig();
+        Config::getInstance()->save();
+        (new Backend())->configdRun('cron restart');
+        return true;
     }
 
     /**
