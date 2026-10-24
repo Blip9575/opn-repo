@@ -347,9 +347,23 @@
         $('#shaper_result').empty().append($('<span/>').addClass(cls).text(text));
     };
     // save the shaper settings first, then run the given action
+    // "Enable traffic shaper" as last saved; null until the settings are loaded
+    var shaper_saved_enabled = null;
+    function shaper_enabled() {
+        return $('[id="speedtest.shaper.enabled"]').is(':checked');
+    };
+    // Create shaper and Apply now need the shaper enabled; Save stays usable until the
+    // unticked state is saved, otherwise the shaper could not be switched off
+    function shaper_buttons() {
+        var on = shaper_enabled();
+        $('#shaperCreateAct, #shaperApplyAct').prop('disabled', !on);
+        $('#shaperSaveAct').prop('disabled', !on && shaper_saved_enabled === false);
+    };
     function shaper_action(btn, url) {
         $("#" + btn + "_progress").addClass("fa fa-spinner fa-pulse");
         saveFormToEndpoint("/api/speedtest/shaper/set", 'frm_shaper', function() {
+            shaper_saved_enabled = shaper_enabled();
+            shaper_buttons();
             ajaxCall(url, {}, function(r, status) {
                 $("#" + btn + "_progress").removeClass("fa fa-spinner fa-pulse");
                 shaper_result(r);
@@ -372,7 +386,10 @@
         $('[id="row_speedtest.shaper.interface"] > td:last').prepend($('#shaperCreateAct'));
         mapDataToFormUI({'frm_shaper': "/api/speedtest/shaper/get", 'frm_schedule': "/api/speedtest/shaper/get"}).done(function() {
             $('.selectpicker').selectpicker('refresh');
+            shaper_saved_enabled = shaper_enabled();
+            shaper_buttons();
         });
+        $('[id="speedtest.shaper.enabled"]').change(shaper_buttons);
 
     });
     $(function() {
@@ -447,6 +464,8 @@
             $("#shaperSaveAct_progress").addClass("fa fa-spinner fa-pulse");
             saveFormToEndpoint("/api/speedtest/shaper/set", 'frm_shaper', function() {
                 $("#shaperSaveAct_progress").removeClass("fa fa-spinner fa-pulse");
+                shaper_saved_enabled = shaper_enabled();
+                shaper_buttons();
             }, false, function() {
                 $("#shaperSaveAct_progress").removeClass("fa fa-spinner fa-pulse");
             });
