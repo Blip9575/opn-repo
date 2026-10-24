@@ -126,11 +126,17 @@
                         <div class="speedtest-help hidden">
                             <small>{{ lang._('Speedtest by Ookla (installed from install.speedtest.net). Its licence and GDPR terms are accepted on your behalf when a test runs.') }}</small>
                         </div>
-                        <pre id="module_output" style="display: none; margin-top: 1ex; max-height: 12em; overflow: auto;"></pre>
                     </td>
                     <td>
                         <button class="btn btn-default" id="moduleInstallAct" type="button" style="display: none;">
                             <b id="moduleInstallAct_label"></b> <i id="moduleInstallAct_progress"></i></button>
+                    </td>
+                </tr>
+                <tr id="module_output_row" style="display: none;">
+                    <td colspan="3">
+                        <pre id="module_output" style="white-space: pre-wrap; margin-bottom: 1ex;"></pre>
+                        <button class="btn btn-default" id="moduleRefreshAct" type="button">
+                            <b>{{ lang._('Refresh') }}</b></button>
                     </td>
                 </tr>
                 <tr class="canruntests" style="display: none;">
@@ -296,6 +302,10 @@
             }
         });
     };
+    // core HTML-escapes <, > and & in API replies (shown as text here, so undo it)
+    function api_text(text) {
+        return String(text).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+    };
     // the speedtest module row: what is installed, and the button to install or replace it
     function version_reload() {
         ajaxCall(url = "/api/speedtest/service/version", sendData = {}, callback = function(l, status) {
@@ -304,7 +314,7 @@
                 text = "{{ lang._('No response') }}";
                 error = true;
             } else if (l.error) {
-                text = l.error;
+                text = api_text(l.error);
                 error = true;
                 button = "{{ lang._('Reinstall Ookla') }}";
             } else if (l.version == 'none') {
@@ -477,10 +487,15 @@
                     ajaxCall("/api/speedtest/service/installsocket", {}, function(r, status) {
                         $("#moduleInstallAct_progress").removeClass("fa fa-spinner fa-pulse");
                         $("#moduleInstallAct").prop('disabled', false);
-                        $('#module_output').text(r && r.output ? r.output : "{{ lang._('No response') }}").show();
+                        $('#module_output').text(r && r.output ? api_text(r.output) : "{{ lang._('No response') }}");
+                        $('#module_output_row').show();
                         version_reload();
                     });
                 });
+        });
+        // reload the page, which also clears the install output
+        $("#moduleRefreshAct").click(function() {
+            window.location.reload();
         });
         // fetch the list of nearest servers on demand
         $("#serverlistAct").click(function() {
