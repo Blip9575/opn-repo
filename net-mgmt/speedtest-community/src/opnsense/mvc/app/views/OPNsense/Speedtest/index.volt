@@ -65,6 +65,51 @@
                 </td>
             </tr>
         </tbody>
+        <tbody id="test_results" style="display:none">
+            <tr>
+                <td colspan="2">
+                    <h2 style="margin-top:1ex;">{{ lang._('Last speedtest') }}</h2>
+                </td>
+            </tr>
+            <tr>
+                <td>Download speed:</td>
+                <td style="font-weight: bold;">
+                    <div id="dlspeed"></div>
+                </td>
+            </tr>
+            <tr>
+                <td>Upload speed:</td>
+                <td style="font-weight: bold;">
+                    <div id="ulspeed"></div>
+                </td>
+            </tr>
+            <tr>
+                <td>Latency (ping):</td>
+                <td style="font-weight: bold;">
+                    <div id="latency"></div>
+                </td>
+            </tr>
+            <tr>
+                <td>Speedtest server:</td>
+                <td style="font-weight: bold;">
+                    <div id="ISP1"></div>
+                    <div id="ISP2"></div>
+                    <div id="ISP3"></div>
+                </td>
+            </tr>
+            <tr>
+                <td>Client IP:</td>
+                <td style="font-weight: bold;">
+                    <div id="client"></div>
+                </td>
+            </tr>
+            <tr>
+                <td>Result id:</td>
+                <td style="font-weight: bold;">
+                    <div id="result"></div>
+                </td>
+            </tr>
+        </tbody>
     </table>
 </div>
 <h2>Run speedtest</h2>
@@ -130,47 +175,6 @@
             <br/>
         </div>
         <div class="clearfix"></div>
-    </div>
-    <div class="table-responsive">
-    <table class="table table-striped table-condensed" style="table-layout: fixed; width: 100%;">
-            <colgroup>
-                <col style="width: 25%;" />
-                <col style="width: 40%;" />
-                <col style="width: 35%;" />
-            </colgroup>
-        <tbody id="test_results" style="display:none">
-                <tr>
-                    <td><div class="control-label"><b>{{ lang._('Download speed') }}</b></div></td>
-                    <td><span id="dlspeed">0 Mbps</span></td>
-                    <td></td>
-                </tr>
-                <tr>
-                    <td><div class="control-label"><b>{{ lang._('Upload speed') }}</b></div></td>
-                    <td><span id="ulspeed">0 Mbps</span></td>
-                    <td></td>
-                </tr>
-                <tr>
-                    <td><div class="control-label"><b>{{ lang._('Latency (ping)') }}</b></div></td>
-                    <td><span id="latency">0 ms</span></td>
-                    <td></td>
-                </tr>
-                <tr>
-                    <td><div class="control-label"><b>{{ lang._('Speedtest server') }}</b></div></td>
-                    <td><div id="ISP1"></div><div id="ISP2"></div><div id="ISP3"></div></td>
-                    <td></td>
-                </tr>
-                <tr>
-                    <td><div class="control-label"><b>{{ lang._('Client IP') }}</b></div></td>
-                    <td><div id="client"></div></td>
-                    <td></td>
-                </tr>
-                <tr>
-                    <td><div class="control-label"><b>{{ lang._('Result id') }}</b></div></td>
-                    <td><div id="result"></div></td>
-                    <td></td>
-                </tr>
-        </tbody>
-    </table>
     </div>
 </div>
 <small><div id="version_error" class="text-danger"></div></small>
@@ -268,16 +272,16 @@
             $('#log_block').html(obj);
         });
     };
-    // the server id field holds "id" or "id (server name)"; returns the id, '' when empty, null when invalid
+    // the server id field holds "id" or "(id) server name"; returns the id, '' when empty, null when invalid
     function serverid_value() {
-        var m = $('#serverid').val().trim().match(/^(\d*)\s*(\(.*\))?$/);
-        return m && (m[1] !== '' || m[2] === undefined) ? m[1] : null;
+        var m = $('#serverid').val().trim().match(/^(?:\((\d+)\).*|(\d+))?$/);
+        return m ? (m[1] || m[2] || '') : null;
     };
-    // pick a server of the list and show it in the server id field as "id (server name)"
+    // pick a server of the list and show it in the server id field as "(id) server name"
     function serverid_select(id) {
         var option = $('#speedlist option').filter(function() { return $(this).val() === id; });
         $('#speedlist').val(id);
-        $('#serverid').val(id === '' ? '' : id + " (" + option.data('name') + ")");
+        $('#serverid').val(id === '' ? '' : "(" + id + ") " + option.data('name'));
         $('#serverid_error').hide();
     };
     function serverlist_reload() {
