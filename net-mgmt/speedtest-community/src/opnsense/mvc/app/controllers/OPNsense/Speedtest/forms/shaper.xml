@@ -1,7 +1,7 @@
 <form>
     <field>
         <id>speedtest.shaper.enabled</id>
-        <label>Enable bandwidth shaper</label>
+        <label>Enable traffic shaper</label>
         <type>checkbox</type>
         <help>Adds scheduled task to cron</help>
     </field>
@@ -10,12 +10,6 @@
         <label>WAN interface</label>
         <type>dropdown</type>
         <help>Creates default pipes, queues and rules to shape LAN to WAN traffic. Will automatically detect and update existing pipes assigned to WAN interface</help>
-    </field>
-    <field>
-        <id>speedtest.shaper.schedule</id>
-        <label>Create scheduled speedtests</label>
-        <type>checkbox</type>
-        <help>Adds a cron task that runs a speedtest at 01:23, 03:23 and 05:23</help>
     </field>
     <field>
         <id>speedtest.shaper.threshold</id>

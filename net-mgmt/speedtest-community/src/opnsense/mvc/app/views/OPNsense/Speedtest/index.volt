@@ -29,11 +29,15 @@
                         <a href="#" id="toggle_advanced_page"><i class="fa fa-toggle-off fa-fw text-danger"></i></a>
                         <small>{{ lang._('advanced mode') }}</small> <i class="fa fa-cog fa-sm fa-fw text-warning"></i>
                     </span>
-                    <h2 style="margin-top:1ex; display: inline-block;">Statistics</h2>
                 </td>
                 <td style="width: 78%; text-align: right; background-color: inherit; border-top-width: 0px;">
                     <small>help </small>
                     <i class="fa fa-toggle-off text-danger" style="cursor: pointer;" id="toggle_help_page"></i>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">
+                    <h2 style="margin-top:1ex;">Statistics</h2>
                 </td>
             </tr>
             <tr>
@@ -90,6 +94,18 @@
                     <td><button class="btn btn-primary" id="reportAct" type="button">
                 <b>{{ lang._('run speedtest') }}</b> <i id="reportAct_progress"></i></button></td>
                 </tr>
+                <tr class="canruntests" style="display:none">
+                    <td colspan="2">
+                        <label style="font-weight: normal;">
+                            <input type="checkbox" id="schedule"> {{ lang._('Create scheduled speedtests') }}
+                        </label>
+                        <i id="schedule_progress"></i> <small id="schedule_result"></small>
+                        <br/>
+                        <small class="text-muted speedtest-help hidden">
+                            {{ lang._('Adds a cron task that runs a speedtest at 01:23, 03:23 and 05:23') }}
+                        </small>
+                    </td>
+                </tr>
                 <tr>
                     <div id="checkingspeedtest">&nbsp;&nbsp;Locating speedtest module...</div>
                     <div id="nospeedtest" style="display:none">&nbsp;&nbsp;No installed speedtest modules found. Install 
@@ -136,8 +152,9 @@
         </table>
     </div>
 </div>
-<small><div id="version"></div></small>
+<small><div id="version_error" class="text-danger"></div></small>
 <div class="hide" id="speedtest_advanced">
+    <small><div id="version"></div></small>
 
     <a href="/ui/cron"><button class="btn btn-xs btn-primary" id="cronAct" type="button">
             <b> schedule in cron </b>
@@ -257,7 +274,7 @@
             if (l.version=='none') {
                 $('#nospeedtest').show("div");
             } else if (l.error) {
-                $('#version').text(l.error);
+                $('#version_error').text(l.error);
             } else {
                 $('.canruntests').show();
                 $('#version').text(l.message);
@@ -304,6 +321,9 @@
         $('#show_all_help_frm_shaper').closest('tr').remove();
         mapDataToFormUI({'frm_shaper': "/api/speedtest/shaper/get"}).done(function() {
             $('.selectpicker').selectpicker('refresh');
+        });
+        ajaxGet("/api/speedtest/shaper/get", {}, function(data, status) {
+            $('#schedule').prop('checked', ((data.speedtest || {}).shaper || {}).schedule == '1');
         });
 
     });
@@ -406,6 +426,22 @@
                 $("#shaperSaveAct_progress").removeClass("fa fa-spinner fa-pulse");
             }, false, function() {
                 $("#shaperSaveAct_progress").removeClass("fa fa-spinner fa-pulse");
+            });
+        });
+        // scheduled speedtests are saved on change; saving adds or (en/dis)ables their cron task
+        $("#schedule").change(function() {
+            var box = $(this);
+            box.prop('disabled', true);
+            $("#schedule_progress").addClass("fa fa-spinner fa-pulse");
+            ajaxCall("/api/speedtest/shaper/set", {'speedtest': {'shaper': {'schedule': box.is(':checked') ? '1' : '0'}}}, function(r, status) {
+                $("#schedule_progress").removeClass("fa fa-spinner fa-pulse");
+                box.prop('disabled', false);
+                var ok = r && r.result == 'saved';
+                if (!ok) {
+                    box.prop('checked', !box.is(':checked'));
+                }
+                $('#schedule_result').attr('class', ok ? 'text-success' : 'text-danger')
+                    .text(ok ? "{{ lang._('saved') }}" : "{{ lang._('not saved') }}");
             });
         });
         $("#shaperApplyAct").click(function() {
