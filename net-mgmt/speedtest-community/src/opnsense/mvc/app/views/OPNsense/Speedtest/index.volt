@@ -204,6 +204,8 @@
             <b>{{ lang._('Apply now') }}</b> <i id="shaperApplyAct_progress"></i></button>
         <button class="btn btn-default" id="shaperCreateAct" type="button">
             <b>{{ lang._('Create shaper') }}</b> <i id="shaperCreateAct_progress"></i></button>
+        <button class="btn btn-default" id="mssSetAct" type="button" style="display: none;">
+            <b>{{ lang._('Set MSS clamping') }}</b> <i id="mssSetAct_progress"></i></button>
         <br/><br/>
         <div id="shaper_result"></div>
         <br/>
@@ -358,6 +360,15 @@
             log_reload();
         });
     };
+    // MSS clamping of the saved shaper interface; the button only shows when it is missing
+    function mss_reload() {
+        ajaxGet("/api/speedtest/shaper/mss", {}, function(r, status) {
+            var missing = r && r.status == 'missing';
+            $('#mss_status').attr('class', missing ? 'text-danger' : '')
+                .text(r && r.message ? r.message : "{{ lang._('No response') }}");
+            $('#mssSetAct').toggle(missing);
+        });
+    };
     function shaper_result(r) {
         var text = (r && r.message) ? r.message : "{{ lang._('No response') }}";
         var cls = (r && (r.status == 'error' || r.status == 'disabled')) ? 'text-danger' : 'text-success';
@@ -401,6 +412,14 @@
         $('#show_all_help_frm_shaper, #show_all_help_frm_schedule').closest('tr').remove();
         // "Create shaper" next to the interface it creates the shaper on, in the column of "run speedtest"
         $('[id="row_speedtest.shaper.interface"] > td:last').prepend($('#shaperCreateAct'));
+        // MSS clamping status (not a setting of its own) below the DSL type, button in the same column
+        $('[id="row_speedtest.shaper.dsltype"]').after($('<tr id="row_mss"/>')
+            .append($('<td/>').append($('<div class="control-label"/>').append($('<b/>').text("{{ lang._('MSS clamping') }}"))))
+            .append($('<td/>').append($('<span id="mss_status"/>'))
+                .append($('<div class="hidden" data-for="help_for_mss"/>').append($('<small/>')
+                    .text("{{ lang._('The WAN interface clamps TCP to its MTU minus 40, needed when the MTU is below 1500 (PPPoE). Set MSS clamping sets the MSS of the WAN interface to its MTU.') }}"))))
+            .append($('<td/>').append($('#mssSetAct'))));
+        mss_reload();
         mapDataToFormUI({'frm_shaper': "/api/speedtest/shaper/get", 'frm_schedule': "/api/speedtest/shaper/get"}).done(function() {
             $('.selectpicker').selectpicker('refresh');
             shaper_saved_enabled = shaper_enabled();
@@ -482,6 +501,7 @@
                 $("#shaperSaveAct_progress").removeClass("fa fa-spinner fa-pulse");
                 shaper_saved_enabled = shaper_enabled();
                 shaper_buttons();
+                mss_reload();
             }, false, function() {
                 $("#shaperSaveAct_progress").removeClass("fa fa-spinner fa-pulse");
             });
@@ -517,6 +537,19 @@
                 "{{ lang._('Create the WAN_download_p and WAN_upload_p pipes, their queues and rules on the selected interface for each direction that has none? The rules exclude the interface address, so traffic of the firewall itself (and the speedtest) is not shaped.') }}",
                 "{{ lang._('Yes') }}", "{{ lang._('Cancel') }}", function() {
                     shaper_action('shaperCreateAct', "/api/speedtest/shaper/create");
+                });
+        });
+        $("#mssSetAct").click(function() {
+            stdDialogConfirm(
+                "{{ lang._('Set MSS clamping') }}",
+                "{{ lang._('Set the MSS of the WAN interface to its MTU, so the firewall clamps TCP to the MTU minus 40, and reload the firewall rules?') }}",
+                "{{ lang._('Yes') }}", "{{ lang._('Cancel') }}", function() {
+                    $("#mssSetAct_progress").addClass("fa fa-spinner fa-pulse");
+                    ajaxCall("/api/speedtest/shaper/setmss", {}, function(r, status) {
+                        $("#mssSetAct_progress").removeClass("fa fa-spinner fa-pulse");
+                        shaper_result(r);
+                        mss_reload();
+                    });
                 });
         });
         // Delete Log

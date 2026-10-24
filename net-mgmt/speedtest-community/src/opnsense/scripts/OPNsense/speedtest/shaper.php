@@ -30,12 +30,15 @@
 /*
  * Set the traffic shaper pipes of an interface from the speedtest results.
  *
- *   shaper.php set     average the results of the last N days, scale by the threshold and
+ *   shaper.php set     take a percentile of the results of the last N days, scale by the
+ *                      thresholds (and the DSL overhead of the upload's ACKs) and
  *                      update the pipes when they differ by the minimum change
  *   shaper.php create  create pipes, queues and rules on the interface for the
  *                      directions that have none yet
  *   shaper.php sync    when the interface address changed (newwanip hook), update
  *                      the rules that exclude the previous address; set runs it too
+ *   shaper.php mss     MSS clamping status of the interface
+ *   shaper.php setmss  set the interface MSS to its MTU (clamping to MTU - 40)
  *   shaper.php rules   second step of create (run by create itself): a rule can
  *                      only refer to a queue that the process saw when it loaded
  *                      the model, so the rules are added by a fresh process
@@ -56,9 +59,16 @@ use OPNsense\TrafficShaper\TrafficShaper;
 
 const CSV_FILE = '/usr/local/opnsense/scripts/OPNsense/speedtest/speedtest.csv';
 const LOCK_FILE = '/tmp/speedtest_shaper.lock';
-// CoDel: default target (ms) and the size of a full-size Ethernet frame (bits)
+// CoDel default target (ms)
 const CODEL_TARGET_MS = 5;
-const CODEL_PACKET_BITS = 1514 * 8;
+// link framing, bytes per packet on top of the IP packet: Ethernet header for a plain
+// link; DSL per RFC 2684 (ATM, LLC/SNAP bridged incl. AAL5 trailer) or PTM, plus PPPoE
+const ETHERNET_HEADER = 14;
+const DSL_OVERHEAD = ['atm' => 32, 'ptm' => 22];
+const PPPOE_OVERHEAD = 8;
+// TCP/IP headers of a full packet and the size of a TCP ACK (with timestamps)
+const TCPIP_HEADERS = 40;
+const ACK_BYTES = 52;
 
 // speedtest.csv columns
 const CSV_TIMESTAMP = 0;
@@ -94,9 +104,10 @@ function finish($result)
 }
 
 /**
- * average download and upload (Mbit/s) of the results of the last $days days
+ * download and upload (Mbit/s) of the results of the last $days days: the given
+ * percentile of each (0: slowest, 50: median), linear between neighbouring results
  */
-function speedtest_average($days)
+function speedtest_estimate($days, $percentile)
 {
     // the csv timestamp is the UTC time read as local time, compare in the same terms
     $since = time() - (int)date('Z') - $days * 86400;
@@ -115,11 +126,66 @@ function speedtest_average($days)
     if (count($rows) == 0) {
         return null;
     }
-    $avg = ['probes' => count($rows)];
+    $estimate = ['probes' => count($rows)];
     foreach (DIRECTIONS as $dir => $props) {
-        $avg[$dir] = array_sum(array_column($rows, $props['column'])) / count($rows);
+        $values = array_map('floatval', array_column($rows, $props['column']));
+        sort($values);
+        $pos = ($percentile / 100) * (count($values) - 1);
+        $low = (int)floor($pos);
+        $high = min($low + 1, count($values) - 1);
+        $estimate[$dir] = $values[$low] + ($values[$high] - $values[$low]) * ($pos - $low);
     }
-    return $avg;
+    return $estimate;
+}
+
+/**
+ * the link behind the interface: its MTU (as configured now, e.g. 1492 for PPPoE or 1500
+ * with RFC 4638 mini jumbo frames), PPPoE or not, and the DSL type set in the settings
+ */
+function wan_link($interface, $dsltype)
+{
+    $realif = get_real_interface($interface);
+    $details = legacy_interface_details($realif);
+    $link = [
+        'mtu' => !empty($details['mtu']) ? (int)$details['mtu'] : 1500,
+        'pppoe' => strpos($realif, 'pppoe') === 0,
+        'dsl' => isset(DSL_OVERHEAD[$dsltype]) ? $dsltype : '',
+    ];
+    $link['overhead'] = $link['dsl'] != '' ?
+        DSL_OVERHEAD[$link['dsl']] + ($link['pppoe'] ? PPPOE_OVERHEAD : 0) : ETHERNET_HEADER;
+    return $link;
+}
+
+/**
+ * bytes on the line for an IP packet of $bytes: ATM sends 48 bytes in each 53 byte cell
+ * (the last one padded), PTM adds 1 byte per 64
+ */
+function wire_bytes($bytes, $link)
+{
+    $bytes += $link['overhead'];
+    if ($link['dsl'] == 'atm') {
+        return (int)ceil($bytes / 48) * 53;
+    } elseif ($link['dsl'] == 'ptm') {
+        return $bytes * 65 / 64;
+    }
+    return $bytes;
+}
+
+/**
+ * upload bandwidth (Kbit/s) for a DSL line: the speedtest measures full packets, while the
+ * download's ACKs take much more of the line than the shaper counts for them (ATM: a 52
+ * byte ACK takes 106 bytes); reserve the line for one ACK per two full packets at the
+ * download pipe's rate and give the rest to full packets. Never below half of $kbit.
+ */
+function dsl_upload($kbit, $download_kbit, $link)
+{
+    $full = wire_bytes($link['mtu'], $link);
+    // line capacity the result stands for: goodput of full packets -> bytes on the line
+    $line = $kbit * $full / ($link['mtu'] - TCPIP_HEADERS);
+    $acks = $download_kbit * 1000 / (2 * $link['mtu'] * 8);
+    $ack_line = $acks * wire_bytes(ACK_BYTES, $link) * 8 / 1000;
+    $bulk = max(0, $line - $ack_line) * $link['mtu'] / $full;
+    return max($kbit / 2, $bulk + $acks * ACK_BYTES * 8 / 1000);
 }
 
 /**
@@ -191,17 +257,17 @@ function pipe_target($kbit)
 
 /**
  * CoDel target of a pipe that uses CoDel, for its new bandwidth: on a slow pipe one
- * full-size packet takes longer to send than the default target (5 ms), so the target
+ * full-size packet (as sent on the link) takes longer than the default target (5 ms), so the target
  * becomes that time; a target above the default goes back to it once the pipe is
  * fast enough, a lower one is left alone
  * @return string addition to the message, empty when the target is unchanged
  */
-function codel_target($pipe, $kbit)
+function codel_target($pipe, $kbit, $link)
 {
     if ((string)$pipe->scheduler != 'fq_codel' && (string)$pipe->codel_enable != '1') {
         return '';
     }
-    $ms = (int)ceil(CODEL_PACKET_BITS / $kbit);
+    $ms = (int)ceil(wire_bytes($link['mtu'], $link) * 8 / $kbit);
     $current = (string)$pipe->codel_target;
     if ($ms > CODEL_TARGET_MS) {
         $new = (string)$ms;
@@ -302,6 +368,12 @@ function sync_exclusion($mdl, $interface)
     ];
 }
 
+function ordinal($n)
+{
+    $suffix = in_array($n % 100, [11, 12, 13]) ? 'th' : (['th', 'st', 'nd', 'rd'][$n % 10] ?? 'th');
+    return $n . $suffix;
+}
+
 function find_named($items, $description, $filter = null)
 {
     $match = [];
@@ -313,9 +385,33 @@ function find_named($items, $description, $filter = null)
     return count($match) == 1 ? $match[0] : null;
 }
 
+/**
+ * MSS clamping of the interface: the interface "MSS" setting is an MTU, the firewall
+ * clamps TCP to it minus 40 (IPv4); needed when the MTU is below 1500 (PPPoE)
+ */
+function mss_status($interface)
+{
+    $link = wan_link($interface, '');
+    $mss = (string)(Config::getInstance()->object()->interfaces->$interface->mss ?? '');
+    $result = ['interface' => $interface, 'mtu' => $link['mtu'], 'mss' => $mss];
+    if (is_numeric($mss) && (int)$mss <= $link['mtu']) {
+        $result['status'] = 'on';
+        $result['message'] = sprintf('on (TCP MSS %d, MTU %d)', (int)$mss - TCPIP_HEADERS, $link['mtu']);
+    } elseif ($link['mtu'] >= 1500 && !is_numeric($mss)) {
+        $result['status'] = 'unneeded';
+        $result['message'] = sprintf('not needed (MTU %d)', $link['mtu']);
+    } else {
+        $result['status'] = 'missing';
+        $result['message'] = is_numeric($mss) ?
+            sprintf('too high: MSS setting %d is above the MTU %d', (int)$mss, $link['mtu']) :
+            sprintf('missing (MTU %d)', $link['mtu']);
+    }
+    return $result;
+}
+
 $action = $argv[1] ?? '';
-if (!in_array($action, ['set', 'create', 'rules', 'sync'])) {
-    echo json_encode(['status' => 'error', 'message' => 'usage: shaper.php set|create']) . PHP_EOL;
+if (!in_array($action, ['set', 'create', 'rules', 'sync', 'mss', 'setmss'])) {
+    echo json_encode(['status' => 'error', 'message' => 'usage: shaper.php set|create|sync|mss|setmss']) . PHP_EOL;
     exit(0);
 }
 
@@ -328,9 +424,23 @@ if ($action != 'rules' && !flock($lock, LOCK_EX | LOCK_NB)) {
 $mdl = new Speedtest();
 $settings = $mdl->shaper;
 $interface = (string)$settings->interface;
-$threshold = (int)(string)$settings->threshold;
 if ($action == 'sync') {
     finish(sync_exclusion($mdl, $interface));
+}
+if ($action == 'mss') {
+    echo json_encode(mss_status($interface)) . PHP_EOL;
+    exit(0);
+}
+if ($action == 'setmss') {
+    $status = mss_status($interface);
+    if ($status['status'] != 'missing') {
+        finish(['status' => 'unchanged', 'message' => 'MSS clamping ' . $status['message']]);
+    }
+    Config::getInstance()->object()->interfaces->$interface->mss = (string)$status['mtu'];
+    Config::getInstance()->save();
+    (new Backend())->configdRun('filter reload');
+    finish(['status' => 'updated', 'message' => sprintf('MSS clamping set on %s: MSS setting %d (TCP MSS %d)',
+        $interface, $status['mtu'], $status['mtu'] - TCPIP_HEADERS)]);
 }
 if ($action == 'set' && (string)$settings->enabled != '1') {
     finish(['status' => 'disabled', 'message' => 'setting the shaper bandwidth is disabled']);
@@ -342,16 +452,31 @@ if ($sync !== null && $sync['status'] == 'error') {
 }
 
 $days = (int)(string)$settings->days;
-$avg = speedtest_average($days);
+$percentile = (int)(string)$settings->percentile;
+$thresholds = ['download' => (int)(string)$settings->threshold_down, 'upload' => (int)(string)$settings->threshold_up];
+$link = wan_link($interface, (string)$settings->dsltype);
+$avg = speedtest_estimate($days, $percentile);
 if ($avg === null) {
-    finish(['status' => 'error', 'message' => sprintf('no speedtest results of the last %d day(s) to average', $days)]);
+    finish(['status' => 'error', 'message' => sprintf('no speedtest results of the last %d day(s)', $days)]);
 }
-$result = ['status' => 'unchanged', 'interface' => $interface, 'days' => $days, 'probes' => $avg['probes'], 'threshold' => $threshold];
+$result = ['status' => 'unchanged', 'interface' => $interface, 'days' => $days, 'probes' => $avg['probes'],
+    'percentile' => $percentile, 'thresholds' => $thresholds, 'link' => $link];
+$kbit = [];
+foreach (DIRECTIONS as $dir => $props) {
+    $kbit[$dir] = $avg[$dir] * 1000 * $thresholds[$dir] / 100;
+}
+if ($link['dsl'] != '') {
+    $kbit['upload'] = dsl_upload($kbit['upload'], pipe_target($kbit['download'])['kbit'], $link);
+}
 $targets = [];
 foreach (DIRECTIONS as $dir => $props) {
-    $targets[$dir] = pipe_target($avg[$dir] * 1000 * $threshold / 100);
-    $result[$dir] = ['average_mbit' => round($avg[$dir], 2), 'target_mbit' => $targets[$dir]['kbit'] / 1000];
+    $targets[$dir] = pipe_target($kbit[$dir]);
+    $result[$dir] = ['estimate_mbit' => round($avg[$dir], 2), 'target_mbit' => $targets[$dir]['kbit'] / 1000];
 }
+$basis = sprintf(' (%s of %d results of the last %d day(s), download x %d%%, upload x %d%%%s)',
+    $percentile == 50 ? 'median' : ordinal($percentile) . ' percentile', $avg['probes'], $days,
+    $thresholds['download'], $thresholds['upload'],
+    $link['dsl'] != '' ? sprintf(', %s%s MTU %d', strtoupper($link['dsl']), $link['pppoe'] ? ' PPPoE' : '', $link['mtu']) : '');
 
 $shaper = new TrafficShaper();
 $found = discover_pipes($shaper, $interface);
@@ -386,14 +511,14 @@ if ($action == 'set') {
             $pipe->bandwidthMetric = $targets[$dir]['metric'];
             $result[$dir]['action'] = 'updated';
             $msgs[] = sprintf('%s %s: %.2f to %.2f Mbit/s', $dir, $pipe->description, $current / 1000, $target / 1000) .
-                codel_target($pipe, $target);
+                codel_target($pipe, $target, $link);
             $changed = true;
         } else {
             $result[$dir]['action'] = 'unchanged';
             $msgs[] = sprintf('%s %s: %.2f Mbit/s kept (target %.2f, change %.1f%%, minimum %d%%)', $dir, $pipe->description, $current / 1000, $target / 1000, $diff, $minchange);
         }
     }
-    $result['message'] = implode('; ', $msgs) . sprintf(' (average of %d results of the last %d day(s) x %d%%)', $avg['probes'], $days, $threshold);
+    $result['message'] = implode('; ', $msgs) . $basis;
     if ($sync['status'] == 'updated') {
         $result['message'] .= '; ' . $sync['message'];
     }
@@ -436,7 +561,7 @@ if ($action == 'set') {
                 $pipe->origin = 'TrafficShaper';
                 $pipe_uuid = $pipe->getAttribute('uuid');
                 $msgs[] = sprintf('pipe %s (%.2f Mbit/s%s)', $props['pipe'], $targets[$dir]['kbit'] / 1000,
-                    codel_target($pipe, $targets[$dir]['kbit']));
+                    codel_target($pipe, $targets[$dir]['kbit'], $link));
             }
             $queue_uuid = find_named($shaper->queues->queue, $props['queue'], function ($queue) use ($pipe_uuid) {
                 return (string)$queue->pipe == $pipe_uuid;

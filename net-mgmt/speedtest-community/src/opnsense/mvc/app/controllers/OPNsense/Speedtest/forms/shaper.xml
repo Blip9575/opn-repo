@@ -12,16 +12,34 @@
         <help>Creates default pipes, queues and rules to shape LAN to WAN traffic. Will automatically detect and update existing pipes assigned to WAN interface</help>
     </field>
     <field>
-        <id>speedtest.shaper.threshold</id>
-        <label>Threshold (%)</label>
+        <id>speedtest.shaper.dsltype</id>
+        <label>DSL type</label>
+        <type>dropdown</type>
+        <help>Line type of the WAN. On DSL the upload pipe keeps room for the line overhead of the ACKs of downloads (large on ADSL), and the CoDel target counts the DSL framing. The MTU is read from the WAN interface</help>
+    </field>
+    <field>
+        <id>speedtest.shaper.threshold_down</id>
+        <label>Download threshold (%)</label>
         <type>text</type>
-        <help>Recommended to set pipes to 90% of average speedtest result</help>
+        <help>Recommended to set the download pipe to 90% of the speedtest result</help>
+    </field>
+    <field>
+        <id>speedtest.shaper.threshold_up</id>
+        <label>Upload threshold (%)</label>
+        <type>text</type>
+        <help>Recommended to set the upload pipe to 90% of the speedtest result</help>
     </field>
     <field>
         <id>speedtest.shaper.days</id>
-        <label>Days to average</label>
+        <label>Days of results</label>
         <type>text</type>
-        <help>Days of speedtest results to average</help>
+        <help>Days of speedtest results to use</help>
+    </field>
+    <field>
+        <id>speedtest.shaper.percentile</id>
+        <label>Percentile (%)</label>
+        <type>text</type>
+        <help>Which result to use: 0 is the slowest, 50 the median. A low percentile keeps the pipes below the line on slower days</help>
     </field>
     <field>
         <id>speedtest.shaper.minchange</id>

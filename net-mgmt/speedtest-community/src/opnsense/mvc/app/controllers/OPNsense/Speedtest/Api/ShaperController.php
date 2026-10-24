@@ -90,6 +90,27 @@ class ShaperController extends ApiMutableModelControllerBase
     }
 
     /**
+     * MSS clamping status of the shaper interface
+     */
+    public function mssAction()
+    {
+        return json_decode((new Backend())->configdRun("speedtest mssshaper"), true) ??
+            ['status' => 'error', 'message' => gettext('No response from configd')];
+    }
+
+    /**
+     * set MSS clamping on the shaper interface (its MSS setting to its MTU)
+     */
+    public function setmssAction()
+    {
+        if (!$this->request->isPost()) {
+            return ['status' => 'error', 'message' => gettext('Use POST')];
+        }
+        return json_decode((new Backend())->configdRun("speedtest setmss"), true) ??
+            ['status' => 'error', 'message' => gettext('No response from configd')];
+    }
+
+    /**
      * apply the saved speedtest schedule (and the shaper time that follows it) to cron
      */
     public function scheduleAction()
