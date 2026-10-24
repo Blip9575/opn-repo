@@ -169,6 +169,22 @@ function pipe_kbit($pipe)
     return (int)round((float)(string)$pipe->bandwidth * ($factor[(string)$pipe->bandwidthMetric] ?? 1));
 }
 
+/**
+ * pipe setting for a bandwidth: whole Mbit/s from 10 Mbit/s up, else Kbit/s;
+ * rounded down so the pipe stays at or below the threshold
+ */
+function pipe_target($kbit)
+{
+    if ($kbit >= 10000) {
+        $target = ['bandwidth' => (int)floor($kbit / 1000), 'metric' => 'Mbit'];
+        $target['kbit'] = $target['bandwidth'] * 1000;
+    } else {
+        $target = ['bandwidth' => max(1, (int)floor($kbit)), 'metric' => 'Kbit'];
+        $target['kbit'] = $target['bandwidth'];
+    }
+    return $target;
+}
+
 function shaper_apply()
 {
     $backend = new Backend();
@@ -301,8 +317,8 @@ if ($avg === null) {
 $result = ['status' => 'unchanged', 'interface' => $interface, 'days' => $days, 'probes' => $avg['probes'], 'threshold' => $threshold];
 $targets = [];
 foreach (DIRECTIONS as $dir => $props) {
-    $targets[$dir] = max(1, (int)round($avg[$dir] * 1000 * $threshold / 100));
-    $result[$dir] = ['average_mbit' => round($avg[$dir], 2), 'target_kbit' => $targets[$dir]];
+    $targets[$dir] = pipe_target($avg[$dir] * 1000 * $threshold / 100);
+    $result[$dir] = ['average_mbit' => round($avg[$dir], 2), 'target_mbit' => $targets[$dir]['kbit'] / 1000];
 }
 
 $shaper = new TrafficShaper();
@@ -327,17 +343,21 @@ if ($action == 'set') {
         $pipe = $shaper->getNodeByReference('pipes.pipe.' . $found[$dir][0]);
         $current = pipe_kbit($pipe);
         $result[$dir]['pipe'] = sprintf('%s (%s)', $pipe->description, $pipe->number);
-        $result[$dir]['current_kbit'] = $current;
-        $diff = $current > 0 ? abs($targets[$dir] - $current) * 100 / $current : 100;
-        if ($targets[$dir] != $current && $diff >= $minchange) {
-            $pipe->bandwidth = (string)$targets[$dir];
-            $pipe->bandwidthMetric = 'Kbit';
+        $result[$dir]['current_mbit'] = $current / 1000;
+        $target = $targets[$dir]['kbit'];
+        $diff = $current > 0 ? abs($target - $current) * 100 / $current : 100;
+        // a pipe in bit/s or Kbit/s moves to Mbit/s once its target is in Mbit/s, also inside the
+        // minimum change; never back, so the unit doesn't flip around 10 Mbit/s
+        $to_mbit = $targets[$dir]['metric'] == 'Mbit' && in_array((string)$pipe->bandwidthMetric, ['bit', 'Kbit']);
+        if (($target != $current && $diff >= $minchange) || $to_mbit) {
+            $pipe->bandwidth = (string)$targets[$dir]['bandwidth'];
+            $pipe->bandwidthMetric = $targets[$dir]['metric'];
             $result[$dir]['action'] = 'updated';
-            $msgs[] = sprintf('%s %s: %d -> %d Kbit/s', $dir, $pipe->description, $current, $targets[$dir]);
+            $msgs[] = sprintf('%s %s: %.2f -> %.2f Mbit/s', $dir, $pipe->description, $current / 1000, $target / 1000);
             $changed = true;
         } else {
             $result[$dir]['action'] = 'unchanged';
-            $msgs[] = sprintf('%s %s: %d Kbit/s kept (target %d, %.1f%% < %d%%)', $dir, $pipe->description, $current, $targets[$dir], $diff, $minchange);
+            $msgs[] = sprintf('%s %s: %.2f Mbit/s kept (target %.2f, %.1f%% < %d%%)', $dir, $pipe->description, $current / 1000, $target / 1000, $diff, $minchange);
         }
     }
     $result['message'] = implode('; ', $msgs) . sprintf(' (average of %d results of the last %d day(s) x %d%%)', $avg['probes'], $days, $threshold);
@@ -375,13 +395,13 @@ if ($action == 'set') {
             if ($pipe_uuid === null) {
                 $pipe = $shaper->pipes->pipe->Add();
                 $pipe->number = $shaper->newPipeNumber();
-                $pipe->bandwidth = (string)$targets[$dir];
-                $pipe->bandwidthMetric = 'Kbit';
+                $pipe->bandwidth = (string)$targets[$dir]['bandwidth'];
+                $pipe->bandwidthMetric = $targets[$dir]['metric'];
                 $pipe->scheduler = 'fq_pie';
                 $pipe->description = $props['pipe'];
                 $pipe->origin = 'TrafficShaper';
                 $pipe_uuid = $pipe->getAttribute('uuid');
-                $msgs[] = sprintf('pipe %s (%d Kbit/s)', $props['pipe'], $targets[$dir]);
+                $msgs[] = sprintf('pipe %s (%.2f Mbit/s)', $props['pipe'], $targets[$dir]['kbit'] / 1000);
             }
             $queue_uuid = find_named($shaper->queues->queue, $props['queue'], function ($queue) use ($pipe_uuid) {
                 return (string)$queue->pipe == $pipe_uuid;
