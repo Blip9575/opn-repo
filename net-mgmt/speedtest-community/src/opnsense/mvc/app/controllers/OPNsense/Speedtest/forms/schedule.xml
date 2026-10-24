@@ -1,0 +1,8 @@
+<form>
+    <field>
+        <id>speedtest.shaper.schedule</id>
+        <label>Create scheduled speedtests</label>
+        <type>checkbox</type>
+        <help>Adds a cron task that runs a speedtest at 01:23, 03:23 and 05:23</help>
+    </field>
+</form>

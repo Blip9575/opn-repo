@@ -96,14 +96,11 @@
                 </tr>
                 <tr class="canruntests" style="display:none">
                     <td colspan="2">
-                        <label style="font-weight: normal;">
-                            <input type="checkbox" id="schedule"> {{ lang._('Create scheduled speedtests') }}
-                        </label>
-                        <i id="schedule_progress"></i> <small id="schedule_result"></small>
-                        <br/>
-                        <small class="text-muted speedtest-help hidden">
-                            {{ lang._('Adds a cron task that runs a speedtest at 01:23, 03:23 and 05:23') }}
-                        </small>
+                        {{ partial("layout_partials/base_form",['fields':scheduleForm,'id':'frm_schedule'])}}
+                        <button class="btn btn-primary" id="scheduleSaveAct" type="button">
+                            <b>{{ lang._('Save') }}</b> <i id="scheduleSaveAct_progress"></i></button>
+                        <button class="btn btn-default" id="scheduleApplyAct" type="button">
+                            <b>{{ lang._('Apply now') }}</b> <i id="scheduleApplyAct_progress"></i></button>
                     </td>
                 </tr>
                 <tr>
@@ -293,6 +290,35 @@
             });
     };
 
+    // run a speedtest (serverid empty: nearest server) and show its result
+    function run_speedtest(serverid, btn) {
+        $("#" + btn + "_progress").addClass("fa fa-spinner fa-pulse");
+        ajaxCall(url = "/api/speedtest/service/run/" + (serverid === '' ? '0' : serverid), sendData = {}, callback = function(r, status) {
+            $("#" + btn + "_progress").removeClass("fa fa-spinner fa-pulse");
+            $("#test_results").attr("style", "display:content");
+            if (r.error) {
+                $("#dlspeed").text(r.error);
+                $("#ulspeed").text("");
+                $("#latency").text("");
+                $("#ISP1").text("");
+                $("#ISP2").text("");
+                $("#ISP3").text("");
+                $("#client").text("");
+                $("#result").text("");
+            } else {
+                $("#dlspeed").text(r.download + " Mbps");
+                $("#ulspeed").text(r.upload + " Mbps");
+                $("#latency").text(r.latency + " ms");
+                $("#ISP1").text("id: " + r.serverid);
+                $("#ISP2").text(r.servername);
+                $("#ISP3").text(r.country);
+                $("#client").text(r.clientip);
+                $("#result").html("<a href=\"" + r.link + "\"  target=\"_blank\">" + r.link + "</a>");
+            }
+            stat_reload();
+            log_reload();
+        });
+    };
     function shaper_result(r) {
         var text = (r && r.message) ? r.message : "{{ lang._('No response') }}";
         var cls = (r && (r.status == 'error' || r.status == 'disabled')) ? 'text-danger' : 'text-success';
@@ -318,12 +344,10 @@
         log_reload();
         // the shaper form has no info icons or "full help" switch, its help follows the page's help slider
         $('#frm_shaper .control-label a.showhelp, #frm_shaper .control-label i.fa-info-circle').remove();
-        $('#show_all_help_frm_shaper').closest('tr').remove();
-        mapDataToFormUI({'frm_shaper': "/api/speedtest/shaper/get"}).done(function() {
+        $('#frm_schedule .control-label a.showhelp, #frm_schedule .control-label i.fa-info-circle').remove();
+        $('#show_all_help_frm_shaper, #show_all_help_frm_schedule').closest('tr').remove();
+        mapDataToFormUI({'frm_shaper': "/api/speedtest/shaper/get", 'frm_schedule': "/api/speedtest/shaper/get"}).done(function() {
             $('.selectpicker').selectpicker('refresh');
-        });
-        ajaxGet("/api/speedtest/shaper/get", {}, function(data, status) {
-            $('#schedule').prop('checked', ((data.speedtest || {}).shaper || {}).schedule == '1');
         });
 
     });
@@ -339,7 +363,7 @@
         $("#toggle_help_page").click(function() {
             var on = !$(this).hasClass("fa-toggle-on");
             $(this).toggleClass("fa-toggle-on fa-toggle-off").toggleClass("text-success text-danger");
-            $('#frm_shaper [data-for^="help_for"], .speedtest-help').toggleClass('hidden', !on);
+            $('#frm_shaper [data-for^="help_for"], #frm_schedule [data-for^="help_for"], .speedtest-help').toggleClass('hidden', !on);
         });
         // show/hide the log; core's advanced mode toggle only handles elements inside a form
         $("#toggle_log").click(function(e) {
@@ -393,32 +417,7 @@
                 return;
             }
             $('#serverid_error').hide();
-            $("#reportAct_progress").addClass("fa fa-spinner fa-pulse");
-            ajaxCall(url = "/api/speedtest/service/run/" + (serverid === '' ? '0' : serverid), sendData = {}, callback = function(r, status) {
-                $("#reportAct_progress").removeClass("fa fa-spinner fa-pulse");
-                $("#test_results").attr("style", "display:content");
-                if (r.error) {
-                    $("#dlspeed").text(r.error);
-                    $("#ulspeed").text("");
-                    $("#latency").text("");
-                    $("#ISP1").text("");
-                    $("#ISP2").text("");
-                    $("#ISP3").text("");
-                    $("#client").text("");
-                    $("#result").text("");
-                } else {
-                    $("#dlspeed").text(r.download + " Mbps");
-                    $("#ulspeed").text(r.upload + " Mbps");
-                    $("#latency").text(r.latency + " ms");
-                    $("#ISP1").text("id: " + r.serverid);
-                    $("#ISP2").text(r.servername);
-                    $("#ISP3").text(r.country);
-                    $("#client").text(r.clientip);
-                    $("#result").html("<a href=\"" + r.link + "\"  target=\"_blank\">" + r.link + "</a>");
-                }
-                stat_reload();
-                log_reload();
-            });
+            run_speedtest(serverid, 'reportAct');
         });
         $("#shaperSaveAct").click(function() {
             $("#shaperSaveAct_progress").addClass("fa fa-spinner fa-pulse");
@@ -428,21 +427,20 @@
                 $("#shaperSaveAct_progress").removeClass("fa fa-spinner fa-pulse");
             });
         });
-        // scheduled speedtests are saved on change; saving adds or (en/dis)ables their cron task
-        $("#schedule").change(function() {
-            var box = $(this);
-            box.prop('disabled', true);
-            $("#schedule_progress").addClass("fa fa-spinner fa-pulse");
-            ajaxCall("/api/speedtest/shaper/set", {'speedtest': {'shaper': {'schedule': box.is(':checked') ? '1' : '0'}}}, function(r, status) {
-                $("#schedule_progress").removeClass("fa fa-spinner fa-pulse");
-                box.prop('disabled', false);
-                var ok = r && r.result == 'saved';
-                if (!ok) {
-                    box.prop('checked', !box.is(':checked'));
-                }
-                $('#schedule_result').attr('class', ok ? 'text-success' : 'text-danger')
-                    .text(ok ? "{{ lang._('saved') }}" : "{{ lang._('not saved') }}");
+        // saving adds or (en/dis)ables the cron task of the scheduled speedtests
+        $("#scheduleSaveAct").click(function() {
+            $("#scheduleSaveAct_progress").addClass("fa fa-spinner fa-pulse");
+            saveFormToEndpoint("/api/speedtest/shaper/set", 'frm_schedule', function() {
+                $("#scheduleSaveAct_progress").removeClass("fa fa-spinner fa-pulse");
+            }, false, function() {
+                $("#scheduleSaveAct_progress").removeClass("fa fa-spinner fa-pulse");
             });
+        });
+        // save, then run the scheduled speedtest (nearest server) now
+        $("#scheduleApplyAct").click(function() {
+            saveFormToEndpoint("/api/speedtest/shaper/set", 'frm_schedule', function() {
+                run_speedtest('', 'scheduleApplyAct');
+            }, true);
         });
         $("#shaperApplyAct").click(function() {
             shaper_action('shaperApplyAct', "/api/speedtest/shaper/apply");
