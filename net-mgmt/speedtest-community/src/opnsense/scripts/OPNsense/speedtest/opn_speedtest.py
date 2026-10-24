@@ -160,17 +160,22 @@ try:
 
     # checking the version of speedtest
     version = subprocess.run([speedtest, "--version"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=True).stdout.decode('utf-8')
-    bin_version = version.find("Ookla")>0
+    bin_version = "Ookla" in version
 
     # parameter v or version - returning the version string
     if arg=='v' or arg == 'version':
         # speedtest-cli reports itself over two lines, the binary over one; don't
         # assume how many lines are there, warnings can end up in the output too
-        lines = [line for line in version.splitlines() if line.strip()]
+        lines = [line.strip() for line in version.splitlines() if line.strip()]
+        # show the tool and its version plus the module in use; the build hash and
+        # the OS the binary reports are kept in "raw" only
         if bin_version:
-            out={"version":"binary", "message":lines[0]}
+            line = next((l for l in lines if "Ookla" in l), lines[0])
+            name = re.match(r"^(.*?Ookla\s+[\d.]+)", line)
+            out={"version":"binary", "message":(name.group(1) if name else line)+" (socket)", "raw":line}
         else:
-            out={"version":"cli", "message":' '.join(lines[:2])}
+            line = next((l for l in lines if l.startswith("speedtest-cli")), lines[0])
+            out={"version":"cli", "message":line+" (http)", "raw":' '.join(lines[:2])}
         print(json.dumps(out))
         quit()
 

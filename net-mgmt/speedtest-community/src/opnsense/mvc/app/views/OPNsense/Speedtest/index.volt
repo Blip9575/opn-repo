@@ -73,6 +73,7 @@
                         <select id="speedlist" class="form-control">
                             <option value="">{{ lang._('automatic (nearest server)') }}</option>
                         </select>
+                        <small class="text-muted speedtest-help hidden">{{ lang._('Populates server list. Defaults to nearest.') }}</small>
                     </td>
                     <td><button class="btn btn-default" id="serverlistAct" type="button">
                 <b>{{ lang._('Get server list') }}</b> <i id="serverlistAct_progress"></i></button></td>
@@ -81,8 +82,8 @@
                     <td>
                         <input type="text" id="serverid" name="serverid" class="form-control"
                                inputmode="numeric" placeholder="{{ lang._('server id (optional)') }}">
-                        <small class="text-muted">
-                            {{ lang._('Leave empty to let speedtest pick the nearest server, or enter the id of a specific server. "Get server list" fills the list above with the nearest servers; ids of servers further away can be looked up on speedtest.net.') }}
+                        <small class="text-muted speedtest-help hidden">
+                            {{ lang._('Leave empty to let speedtest pick the nearest server, or enter the id of a specific server.') }}
                         </small>
                         <small id="serverid_error" class="text-danger" style="display:none"></small>
                     </td>
@@ -314,11 +315,11 @@
             icon.toggleClass("fa-toggle-on fa-toggle-off").toggleClass("text-success text-danger");
             $('#speedtest_advanced').toggleClass('hide', !icon.hasClass("fa-toggle-on"));
         });
-        // the help slider shows/hides the help of the shaper form; core's help toggle only covers its own form
+        // the help slider shows/hides the help on the page (server fields, shaper form); core's help toggle only covers its own form
         $("#toggle_help_page").click(function() {
             var on = !$(this).hasClass("fa-toggle-on");
             $(this).toggleClass("fa-toggle-on fa-toggle-off").toggleClass("text-success text-danger");
-            $('#frm_shaper [data-for^="help_for"]').toggleClass('hidden', !on);
+            $('#frm_shaper [data-for^="help_for"], .speedtest-help').toggleClass('hidden', !on);
         });
         // show/hide the log; core's advanced mode toggle only handles elements inside a form
         $("#toggle_log").click(function(e) {
