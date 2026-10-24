@@ -20,73 +20,76 @@
 *    ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 *    POSSIBILITY OF SUCH DAMAGE.
 #}
+{# same columns as the forms below (25/40/35), values span the last two #}
 <div class="content-box">
-    <table class="table table-condensed">
+    <table class="table table-condensed" style="table-layout: fixed; width: 100%;">
+        <colgroup>
+            <col style="width: 25%;" />
+            <col style="width: 40%;" />
+            <col style="width: 35%;" />
+        </colgroup>
         <tbody>
             <tr>
-                <td></td>
-                <td style="width: 78%; text-align: right; background-color: inherit; border-top-width: 0px;">
+                <td colspan="2">
+                    <h2 style="margin-top:1ex;">Statistics</h2>
+                </td>
+                <td style="text-align: right; vertical-align: middle;">
                     <small>help </small>
                     <i class="fa fa-toggle-off text-danger" style="cursor: pointer;" id="toggle_help_page"></i>
                 </td>
             </tr>
             <tr>
+                <td>Speedtest probes:</td>
                 <td colspan="2">
-                    <h2 style="margin-top:1ex;">Statistics</h2>
-                </td>
-            </tr>
-            <tr>
-                <td style="width:30%">Speedtest probes:</td>
-                <td>
                     <div id="stat_samples">0</div>
                 </td>
             </tr>
             <tr>
                 <td>Average Download speed:</td>
-                <td>
+                <td colspan="2">
                     <div id="stat_download">0 Mbps (min: 0 Mbps, max: 0 Mbps)</div>
                 </td>
             </tr>
             <tr>
                 <td>Average Upload speed:</td>
-                <td>
+                <td colspan="2">
                     <div id="stat_upload">0 Mbps (min: 0 Mbps, max: 0 Mbps)</div>
                 </td>
             </tr>
             <tr>
                 <td>Average Latency:</td>
-                <td>
+                <td colspan="2">
                     <div id="stat_latency">0.00 ms (min: 0.00 ms, max: 0.00 ms)</div>
                 </td>
             </tr>
         </tbody>
         <tbody id="test_results" style="display:none">
             <tr>
-                <td colspan="2">
+                <td colspan="3">
                     <h2 style="margin-top:1ex;">{{ lang._('Last speedtest') }}</h2>
                 </td>
             </tr>
             <tr>
                 <td>Download speed:</td>
-                <td style="font-weight: bold;">
+                <td colspan="2" style="font-weight: bold;">
                     <div id="dlspeed"></div>
                 </td>
             </tr>
             <tr>
                 <td>Upload speed:</td>
-                <td style="font-weight: bold;">
+                <td colspan="2" style="font-weight: bold;">
                     <div id="ulspeed"></div>
                 </td>
             </tr>
             <tr>
                 <td>Latency (ping):</td>
-                <td style="font-weight: bold;">
+                <td colspan="2" style="font-weight: bold;">
                     <div id="latency"></div>
                 </td>
             </tr>
             <tr>
                 <td>Speedtest server:</td>
-                <td style="font-weight: bold;">
+                <td colspan="2" style="font-weight: bold;">
                     <div id="ISP1"></div>
                     <div id="ISP2"></div>
                     <div id="ISP3"></div>
@@ -94,13 +97,13 @@
             </tr>
             <tr>
                 <td>Client IP:</td>
-                <td style="font-weight: bold;">
+                <td colspan="2" style="font-weight: bold;">
                     <div id="client"></div>
                 </td>
             </tr>
             <tr>
                 <td>Result id:</td>
-                <td style="font-weight: bold;">
+                <td colspan="2" style="font-weight: bold;">
                     <div id="result"></div>
                 </td>
             </tr>
