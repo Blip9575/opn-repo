@@ -30,10 +30,10 @@
         </colgroup>
         <tbody>
             <tr>
-                <td colspan="2">
+                <td colspan="2" style="border-top: 0;">
                     <h2 style="margin-top:1ex;">Statistics</h2>
                 </td>
-                <td style="text-align: right; vertical-align: middle;">
+                <td style="text-align: right; vertical-align: middle; border-top: 0;">
                     <small>help </small>
                     <i class="fa fa-toggle-off text-danger" style="cursor: pointer;" id="toggle_help_page"></i>
                 </td>
@@ -65,7 +65,7 @@
         </tbody>
         <tbody id="test_results" style="display:none">
             <tr>
-                <td colspan="3">
+                <td colspan="3" style="border-top: 0;">
                     <h2 style="margin-top:1ex;">{{ lang._('Last speedtest') }}</h2>
                 </td>
             </tr>
@@ -89,7 +89,7 @@
             </tr>
             <tr>
                 <td>Speedtest server:</td>
-                <td colspan="2" style="font-weight: bold;">
+                <td colspan="2">
                     <div id="ISP1"></div>
                     <div id="ISP2"></div>
                     <div id="ISP3"></div>
@@ -97,13 +97,13 @@
             </tr>
             <tr>
                 <td>Client IP:</td>
-                <td colspan="2" style="font-weight: bold;">
+                <td colspan="2">
                     <div id="client"></div>
                 </td>
             </tr>
             <tr>
                 <td>Result id:</td>
-                <td colspan="2" style="font-weight: bold;">
+                <td colspan="2">
                     <div id="result"></div>
                 </td>
             </tr>
