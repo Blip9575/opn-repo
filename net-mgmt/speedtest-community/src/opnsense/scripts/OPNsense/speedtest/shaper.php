@@ -397,7 +397,8 @@ if ($action == 'set') {
                 $pipe->number = $shaper->newPipeNumber();
                 $pipe->bandwidth = (string)$targets[$dir]['bandwidth'];
                 $pipe->bandwidthMetric = $targets[$dir]['metric'];
-                $pipe->scheduler = 'fq_pie';
+                $pipe->scheduler = 'fq_codel';
+                $pipe->codel_ecn_enable = '1';
                 $pipe->description = $props['pipe'];
                 $pipe->origin = 'TrafficShaper';
                 $pipe_uuid = $pipe->getAttribute('uuid');
