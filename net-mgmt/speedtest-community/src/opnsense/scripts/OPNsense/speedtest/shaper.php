@@ -56,6 +56,10 @@ use OPNsense\TrafficShaper\TrafficShaper;
 
 const CSV_FILE = '/usr/local/opnsense/scripts/OPNsense/speedtest/speedtest.csv';
 const LOCK_FILE = '/tmp/speedtest_shaper.lock';
+// CoDel: default target (ms) and the size of a full-size Ethernet frame (bits)
+const CODEL_TARGET_MS = 5;
+const CODEL_PACKET_BITS = 1514 * 8;
+
 // speedtest.csv columns
 const CSV_TIMESTAMP = 0;
 const CSV_DOWNLOAD = 5;
@@ -183,6 +187,34 @@ function pipe_target($kbit)
         $target['kbit'] = $target['bandwidth'];
     }
     return $target;
+}
+
+/**
+ * CoDel target of a pipe that uses CoDel, for its new bandwidth: on a slow pipe one
+ * full-size packet takes longer to send than the default target (5 ms), so the target
+ * becomes that time; a target above the default goes back to it once the pipe is
+ * fast enough, a lower one is left alone
+ * @return string addition to the message, empty when the target is unchanged
+ */
+function codel_target($pipe, $kbit)
+{
+    if ((string)$pipe->scheduler != 'fq_codel' && (string)$pipe->codel_enable != '1') {
+        return '';
+    }
+    $ms = (int)ceil(CODEL_PACKET_BITS / $kbit);
+    $current = (string)$pipe->codel_target;
+    if ($ms > CODEL_TARGET_MS) {
+        $new = (string)$ms;
+    } elseif ($current !== '' && (int)$current > CODEL_TARGET_MS) {
+        $new = '';
+    } else {
+        return '';
+    }
+    if ($new === $current) {
+        return '';
+    }
+    $pipe->codel_target = $new;
+    return $new === '' ? ', CoDel target back to default' : sprintf(', CoDel target %d ms', $ms);
 }
 
 function shaper_apply()
@@ -353,7 +385,8 @@ if ($action == 'set') {
             $pipe->bandwidth = (string)$targets[$dir]['bandwidth'];
             $pipe->bandwidthMetric = $targets[$dir]['metric'];
             $result[$dir]['action'] = 'updated';
-            $msgs[] = sprintf('%s %s: %.2f to %.2f Mbit/s', $dir, $pipe->description, $current / 1000, $target / 1000);
+            $msgs[] = sprintf('%s %s: %.2f to %.2f Mbit/s', $dir, $pipe->description, $current / 1000, $target / 1000) .
+                codel_target($pipe, $target);
             $changed = true;
         } else {
             $result[$dir]['action'] = 'unchanged';
@@ -402,7 +435,8 @@ if ($action == 'set') {
                 $pipe->description = $props['pipe'];
                 $pipe->origin = 'TrafficShaper';
                 $pipe_uuid = $pipe->getAttribute('uuid');
-                $msgs[] = sprintf('pipe %s (%.2f Mbit/s)', $props['pipe'], $targets[$dir]['kbit'] / 1000);
+                $msgs[] = sprintf('pipe %s (%.2f Mbit/s%s)', $props['pipe'], $targets[$dir]['kbit'] / 1000,
+                    codel_target($pipe, $targets[$dir]['kbit']));
             }
             $queue_uuid = find_named($shaper->queues->queue, $props['queue'], function ($queue) use ($pipe_uuid) {
                 return (string)$queue->pipe == $pipe_uuid;
