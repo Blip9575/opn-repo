@@ -266,24 +266,35 @@
             $('#log_block').html(obj);
         });
     };
+    // the server id field holds "id" or "id (server name)"; returns the id, '' when empty, null when invalid
+    function serverid_value() {
+        var m = $('#serverid').val().trim().match(/^(\d*)\s*(\(.*\))?$/);
+        return m && (m[1] !== '' || m[2] === undefined) ? m[1] : null;
+    };
+    // pick a server of the list and show it in the server id field as "id (server name)"
+    function serverid_select(id) {
+        var option = $('#speedlist option').filter(function() { return $(this).val() === id; });
+        $('#speedlist').val(id);
+        $('#serverid').val(id === '' ? '' : id + " (" + option.data('name') + ")");
+        $('#serverid_error').hide();
+    };
     function serverlist_reload() {
         $("#serverlistAct_progress").addClass("fa fa-spinner fa-pulse");
         ajaxCall(url = "/api/speedtest/service/serverlist", sendData = {}, callback = function(l, status) {
             $("#serverlistAct_progress").removeClass("fa fa-spinner fa-pulse");
-            var selected = $('#serverid').val().trim();
+            var selected = serverid_value();
             $('#speedlist').empty().append($('<option/>').val("").text("{{ lang._('automatic (nearest server)') }}"));
             if (Array.isArray(l) && l.length > 0) {
                 for (var i = 0; i < l.length; i++) {
-                    $('#speedlist').append($('<option/>').val(l[i].id)
+                    $('#speedlist').append($('<option/>').val(l[i].id).data('name', l[i].name)
                         .text("(" + l[i].id + ") " + l[i].name + ", " + l[i].location));
                 }
+                // keep an entered id when it is part of the fetched list, else take the nearest server (listed first)
+                var found = selected && $('#speedlist option').filter(function() { return $(this).val() === selected; }).length > 0;
+                serverid_select(found ? selected : String(l[0].id));
             } else {
                 $('#speedlist').append($('<option/>').val("").prop("disabled", true)
                     .text(l && l.error ? l.error : "{{ lang._('no servers returned') }}"));
-            }
-            // keep a manually entered id selected when it is part of the fetched list
-            if (/^\d+$/.test(selected) && $('#speedlist option[value="' + selected + '"]').length > 0) {
-                $('#speedlist').val(selected);
             }
         });
     };
@@ -448,12 +459,11 @@
         });
         // picking a server from the list fills the (optional) server id field
         $("#speedlist").change(function() {
-            $('#serverid').val($(this).val());
-            $('#serverid_error').hide();
+            serverid_select($(this).val());
         });
         $("#reportAct").click(function() {
-            var serverid = $('#serverid').val().trim();
-            if (serverid !== '' && !/^\d+$/.test(serverid)) {
+            var serverid = serverid_value();
+            if (serverid === null) {
                 $('#serverid_error').text("{{ lang._('Please enter a numeric server id or leave the field empty.') }}").show();
                 return;
             }
