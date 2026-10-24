@@ -20,6 +20,14 @@
 *    ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 *    POSSIBILITY OF SUCH DAMAGE.
 #}
+{# heading above its box like "Run speedtest" and "Traffic shaper", the page's help switch on the same line #}
+<div style="display: flex; justify-content: space-between; align-items: baseline;">
+    <h2>{{ lang._('Statistics') }}</h2>
+    <span>
+        <small>help </small>
+        <i class="fa fa-toggle-off text-danger" style="cursor: pointer;" id="toggle_help_page"></i>
+    </span>
+</div>
 {# same columns as the forms below (25/40/35), values span the last two #}
 <div class="content-box">
     <table class="table table-condensed" style="table-layout: fixed; width: 100%;">
@@ -29,15 +37,6 @@
             <col style="width: 35%;" />
         </colgroup>
         <tbody>
-            <tr>
-                <td colspan="2" style="border-top: 0;">
-                    <h2 style="margin-top:1ex;">Statistics</h2>
-                </td>
-                <td style="text-align: right; vertical-align: middle; border-top: 0;">
-                    <small>help </small>
-                    <i class="fa fa-toggle-off text-danger" style="cursor: pointer;" id="toggle_help_page"></i>
-                </td>
-            </tr>
             <tr>
                 <td>Speedtest probes:</td>
                 <td colspan="2">
