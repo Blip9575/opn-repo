@@ -13,7 +13,7 @@
     </field>
     <field>
         <id>speedtest.shaper.dsltype</id>
-        <label>DSL type</label>
+        <label>WAN type</label>
         <type>dropdown</type>
         <help>Line type of the WAN. On DSL the upload pipe keeps room for the line overhead of the ACKs of downloads (large on ADSL), and the CoDel target counts the DSL framing. The MTU is read from the WAN interface</help>
     </field>

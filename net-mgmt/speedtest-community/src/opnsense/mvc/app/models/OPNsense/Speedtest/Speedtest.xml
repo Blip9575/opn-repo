@@ -18,7 +18,7 @@
                 <Default>none</Default>
                 <Required>Y</Required>
                 <OptionValues>
-                    <none>None (Ethernet, fibre, cable)</none>
+                    <none>Ethernet, fibre, cable</none>
                     <ptm>VDSL2 (PTM)</ptm>
                     <atm>ADSL (ATM)</atm>
                 </OptionValues>

@@ -473,7 +473,7 @@
         $('#show_all_help_frm_shaper, #show_all_help_frm_schedule').closest('tr').remove();
         // "Create shaper" next to the interface it creates the shaper on, in the column of "run speedtest"
         $('[id="row_speedtest.shaper.interface"] > td:last').prepend($('#shaperCreateAct'));
-        // MSS clamping status (not a setting of its own) below the DSL type, button in the same column
+        // MSS clamping status (not a setting of its own) below the WAN type, button in the same column
         $('[id="row_speedtest.shaper.dsltype"]').after($('<tr id="row_mss"/>')
             .append($('<td/>').append($('<div class="control-label"/>').append($('<b/>').text("{{ lang._('MSS clamping') }}"))))
             // read-only text box, like the other fields of the form
