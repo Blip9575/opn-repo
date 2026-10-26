@@ -492,6 +492,9 @@
                     .text("{{ lang._('Ranked by their results of the last 30 days, as a share of the fastest result of the same day. Each night starts with Get server list; the tests use the best ranked servers on it, then the server speedtest picks. Once a night a server of the list without results gets a trial.') }}"))))
             .append($('<td/>')));
         servers_reload();
+        // read-only boxes in the colour of the editable ones (the theme greys out read-only inputs);
+        // the text colour stays with the classes, MSS "missing" is red
+        $('#mss_status, #scheduled_servers').css('background-color', $('[id="speedtest.shaper.days"]').css('background-color'));
         page_help(help_preset(), false);
         mapDataToFormUI({'frm_shaper': "/api/speedtest/shaper/get", 'frm_schedule': "/api/speedtest/shaper/get"}).done(function() {
             $('.selectpicker').selectpicker('refresh');
