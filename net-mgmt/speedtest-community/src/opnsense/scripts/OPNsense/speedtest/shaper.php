@@ -61,6 +61,8 @@ const CSV_FILE = '/usr/local/opnsense/scripts/OPNsense/speedtest/speedtest.csv';
 const LOCK_FILE = '/tmp/speedtest_shaper.lock';
 // CoDel default target (ms)
 const CODEL_TARGET_MS = 5;
+// pipes are written in whole Mbit/s from this bandwidth (Kbit/s) up, in Kbit/s below it
+const MBIT_FROM = 20000;
 // link framing, bytes per packet on top of the IP packet: Ethernet header for a plain
 // link; DSL per RFC 2684 (ATM, LLC/SNAP bridged incl. AAL5 trailer) or PTM, plus PPPoE
 const ETHERNET_HEADER = 14;
@@ -240,12 +242,12 @@ function pipe_kbit($pipe)
 }
 
 /**
- * pipe setting for a bandwidth: whole Mbit/s from 10 Mbit/s up, else Kbit/s;
- * rounded down so the pipe stays at or below the threshold
+ * pipe setting for a bandwidth: whole Mbit/s from MBIT_FROM Kbit/s up, else Kbit/s (below 20 Mbit/s
+ * a whole Mbit/s is 5% or more); rounded down so the pipe stays at or below the threshold
  */
 function pipe_target($kbit)
 {
-    if ($kbit >= 10000) {
+    if ($kbit >= MBIT_FROM) {
         $target = ['bandwidth' => (int)floor($kbit / 1000), 'metric' => 'Mbit'];
         $target['kbit'] = $target['bandwidth'] * 1000;
     } else {
@@ -503,10 +505,10 @@ if ($action == 'set') {
         $result[$dir]['current_mbit'] = $current / 1000;
         $target = $targets[$dir]['kbit'];
         $diff = $current > 0 ? abs($target - $current) * 100 / $current : 100;
-        // a pipe in bit/s or Kbit/s moves to Mbit/s once its target is in Mbit/s, also inside the
-        // minimum change; never back, so the unit doesn't flip around 10 Mbit/s
-        $to_mbit = $targets[$dir]['metric'] == 'Mbit' && in_array((string)$pipe->bandwidthMetric, ['bit', 'Kbit']);
-        if (($target != $current && $diff >= $minchange) || $to_mbit) {
+        // a pipe in another unit than its target (Kbit/s below MBIT_FROM, Mbit/s from there) takes the
+        // target's unit, also inside the minimum change
+        $unit = (string)$pipe->bandwidthMetric != $targets[$dir]['metric'];
+        if (($target != $current && $diff >= $minchange) || $unit) {
             $pipe->bandwidth = (string)$targets[$dir]['bandwidth'];
             $pipe->bandwidthMetric = $targets[$dir]['metric'];
             $result[$dir]['action'] = 'updated';
