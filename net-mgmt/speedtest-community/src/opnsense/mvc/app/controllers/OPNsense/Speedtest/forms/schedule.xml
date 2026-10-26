@@ -3,7 +3,7 @@
         <id>speedtest.shaper.schedule</id>
         <label>Create scheduled speedtests</label>
         <type>checkbox</type>
-        <help>Adds a cron task that runs speedtests between 00:00 and 06:00</help>
+        <help>Adds a cron task that runs speedtests between 00:00 and 06:00, against the servers that measured the line fastest so far</help>
     </field>
     <field>
         <id>speedtest.shaper.frequency</id>

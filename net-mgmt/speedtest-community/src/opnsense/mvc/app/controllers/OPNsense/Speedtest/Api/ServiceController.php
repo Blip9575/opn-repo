@@ -54,6 +54,11 @@ class ServiceController extends ApiControllerBase
         return (new Backend())->configdpRun("speedtest run", [$serverid]);
     }
 
+    public function serversAction()
+    {
+        return (new Backend())->configdRun("speedtest servers");
+    }
+
     public function showstatAction()
     {
         return (new Backend())->configdRun("speedtest showstat");

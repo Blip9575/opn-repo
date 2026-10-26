@@ -63,7 +63,7 @@
                 <ValidationMessage>The number of days must be between 1 and 30.</ValidationMessage>
             </days>
             <percentile type="IntegerField">
-                <Default>25</Default>
+                <Default>90</Default>
                 <Required>Y</Required>
                 <MinimumValue>0</MinimumValue>
                 <MaximumValue>100</MaximumValue>

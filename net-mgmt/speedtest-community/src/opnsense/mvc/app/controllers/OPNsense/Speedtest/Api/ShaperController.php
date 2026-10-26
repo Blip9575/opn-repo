@@ -46,8 +46,15 @@ class ShaperController extends ApiMutableModelControllerBase
      * cron tasks owned by the shaper settings: command => [setting, description]
      */
     private const CRON_JOBS = [
-        'speedtest run' => ['schedule', 'Run scheduled speedtest'],
+        'speedtest scheduled' => ['schedule', 'Run scheduled speedtest'],
         'speedtest setshaper' => ['enabled', 'Set shaper bandwidth from speedtest results'],
+    ];
+
+    /**
+     * commands the tasks had before: command => current command
+     */
+    private const CRON_RENAMED = [
+        'speedtest run' => 'speedtest scheduled',
     ];
 
     /**
@@ -70,7 +77,7 @@ class ShaperController extends ApiMutableModelControllerBase
         }
         $shaper = end($hours) * 60 + $offset + self::SHAPER_DELAY;
         return [
-            'speedtest run' => [(string)$offset, implode(',', $hours)],
+            'speedtest scheduled' => [(string)$offset, implode(',', $hours)],
             'speedtest setshaper' => [(string)($shaper % 60), (string)intdiv($shaper, 60)],
         ];
     }
@@ -130,7 +137,7 @@ class ShaperController extends ApiMutableModelControllerBase
         }
         return ['status' => 'ok', 'message' => sprintf(
             gettext('Speedtests at %s (%s); shaper set at %s (%s)'),
-            $times['speedtest run'],
+            $times['speedtest scheduled'],
             (string)$settings->schedule == '1' ? gettext('enabled') : gettext('disabled'),
             $times['speedtest setshaper'],
             (string)$settings->enabled == '1' ? gettext('enabled') : gettext('disabled')
@@ -154,6 +161,16 @@ class ShaperController extends ApiMutableModelControllerBase
             foreach ($cron->jobs->job->iterateItems() as $item) {
                 if ((string)$item->origin == 'Speedtest' && (string)$item->command == $command) {
                     $job = $item;
+                    break;
+                }
+            }
+            // a task of an older version takes the new command instead of being left running beside it
+            foreach ($job === null ? $cron->jobs->job->iterateItems() : [] as $item) {
+                if ((string)$item->origin == 'Speedtest' && (self::CRON_RENAMED[(string)$item->command] ?? '') == $command) {
+                    $job = $item;
+                    $job->command = $command;
+                    $job->description = $description;
+                    $changed = true;
                     break;
                 }
             }

@@ -391,6 +391,23 @@
             $('#mssSetAct').toggle(missing);
         });
     };
+    // servers the scheduled speedtests use, best ranked first
+    function servers_reload() {
+        ajaxGet("/api/speedtest/service/servers", {}, function(r, status) {
+            var text = "{{ lang._('None ranked yet, speedtest picks the server') }}";
+            if (r && r.servers) {
+                var names = $.map(r.servers.filter(function(s) { return r.candidates.indexOf(s.id) >= 0; }), function(s) {
+                    return '(' + s.id + ') ' + api_text(s.name) + ' ' + Math.round(s.score * 100) + '%';
+                });
+                if (names.length) {
+                    text = names.join('; ');
+                }
+            } else if (r && r.error) {
+                text = api_text(r.error);
+            }
+            $('#scheduled_servers').val(text);
+        });
+    };
     // help on the page (server fields, schedule, shaper form, MSS row), shown or hidden together;
     // follows core's "full help" preset of the session, which core already applied to the forms
     function page_help(on, store) {
@@ -466,6 +483,15 @@
                     .text("{{ lang._('The WAN interface clamps TCP to its MTU minus 40, needed when the MTU is below 1500 (PPPoE). Set MSS clamping sets the MSS of the WAN interface to its MTU.') }}"))))
             .append($('<td/>').append($('#mssSetAct'))));
         mss_reload();
+        // servers of the scheduled speedtests (not a setting) below the schedule offset
+        $('[id="row_speedtest.shaper.offset"]').after($('<tr id="row_scheduled_servers"/>')
+            .append($('<td/>').append($('<div class="control-label"/>').append($('<b/>').text("{{ lang._('Scheduled servers') }}"))))
+            .append($('<td/>').append($('<input type="text" id="scheduled_servers" class="form-control" size="50" readonly="readonly"/>')
+                    .attr('aria-label', "{{ lang._('Scheduled servers') }}"))
+                .append($('<div class="hidden" data-for="help_for_scheduled_servers"/>').append($('<small/>')
+                    .text("{{ lang._('Ranked by their results of the last 30 days, as a share of the fastest result of the same day. Each night starts with Get server list; the tests use the best ranked servers on it, then the server speedtest picks. Once a night a server of the list without results gets a trial.') }}"))))
+            .append($('<td/>')));
+        servers_reload();
         page_help(help_preset(), false);
         mapDataToFormUI({'frm_shaper': "/api/speedtest/shaper/get", 'frm_schedule': "/api/speedtest/shaper/get"}).done(function() {
             $('.selectpicker').selectpicker('refresh');

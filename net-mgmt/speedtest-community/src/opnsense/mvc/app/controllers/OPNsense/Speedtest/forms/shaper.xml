@@ -33,13 +33,13 @@
         <id>speedtest.shaper.days</id>
         <label>Days of results</label>
         <type>text</type>
-        <help>Days of speedtest results to use</help>
+        <help>Days of speedtest results to use. With a high percentile, a line that resyncs lower keeps its pipes too high until the faster results are older than this</help>
     </field>
     <field>
         <id>speedtest.shaper.percentile</id>
         <label>Percentile (%)</label>
         <type>text</type>
-        <help>Which result to use: 0 is the slowest, 50 the median. A low percentile keeps the pipes below the line on slower days</help>
+        <help>Which result to use: 100 is the fastest, 50 the median, 0 the slowest. A speedtest only measures less than the line carries (a slow server, other traffic during the test), so 90 is recommended; the thresholds keep the pipes below the line</help>
     </field>
     <field>
         <id>speedtest.shaper.minchange</id>
