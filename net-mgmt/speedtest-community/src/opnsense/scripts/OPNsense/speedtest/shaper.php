@@ -106,8 +106,9 @@ function finish($result)
 }
 
 /**
- * download and upload (Mbit/s) of the results of the last $days days: the given
- * percentile of each (0: slowest, 50: median), linear between neighbouring results
+ * download and upload (Mbit/s) of the results of the last $days days: the results of an hour
+ * are averaged (the scheduled speedtests run several tests at each interval), then the given
+ * percentile of the hourly averages (0: slowest, 50: median), linear between neighbouring ones
  */
 function speedtest_estimate($days, $percentile)
 {
@@ -128,9 +129,16 @@ function speedtest_estimate($days, $percentile)
     if (count($rows) == 0) {
         return null;
     }
-    $estimate = ['probes' => count($rows)];
+    $hours = [];
+    foreach ($rows as $row) {
+        $hours[intdiv((int)$row[CSV_TIMESTAMP], 3600)][] = $row;
+    }
+    $estimate = ['probes' => count($rows), 'hours' => count($hours)];
     foreach (DIRECTIONS as $dir => $props) {
-        $values = array_map('floatval', array_column($rows, $props['column']));
+        $values = [];
+        foreach ($hours as $hour) {
+            $values[] = array_sum(array_map('floatval', array_column($hour, $props['column']))) / count($hour);
+        }
         sort($values);
         $pos = ($percentile / 100) * (count($values) - 1);
         $low = (int)floor($pos);
@@ -461,7 +469,7 @@ $avg = speedtest_estimate($days, $percentile);
 if ($avg === null) {
     finish(['status' => 'error', 'message' => sprintf('no speedtest results of the last %d day(s)', $days)]);
 }
-$result = ['status' => 'unchanged', 'interface' => $interface, 'days' => $days, 'probes' => $avg['probes'],
+$result = ['status' => 'unchanged', 'interface' => $interface, 'days' => $days, 'probes' => $avg['probes'], 'hours' => $avg['hours'],
     'percentile' => $percentile, 'thresholds' => $thresholds, 'link' => $link];
 $kbit = [];
 foreach (DIRECTIONS as $dir => $props) {
@@ -475,8 +483,8 @@ foreach (DIRECTIONS as $dir => $props) {
     $targets[$dir] = pipe_target($kbit[$dir]);
     $result[$dir] = ['estimate_mbit' => round($avg[$dir], 2), 'target_mbit' => $targets[$dir]['kbit'] / 1000];
 }
-$basis = sprintf(' (%s of %d results of the last %d day(s), download x %d%%, upload x %d%%%s)',
-    $percentile == 50 ? 'median' : ordinal($percentile) . ' percentile', $avg['probes'], $days,
+$basis = sprintf(' (%s of %d hourly averages (%d results) of the last %d day(s), download x %d%%, upload x %d%%%s)',
+    $percentile == 50 ? 'median' : ordinal($percentile) . ' percentile', $avg['hours'], $avg['probes'], $days,
     $thresholds['download'], $thresholds['upload'],
     $link['dsl'] != '' ? sprintf(', %s%s MTU %d', strtoupper($link['dsl']), $link['pppoe'] ? ' PPPoE' : '', $link['mtu']) : '');
 

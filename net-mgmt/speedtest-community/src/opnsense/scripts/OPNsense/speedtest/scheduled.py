@@ -31,11 +31,14 @@
 
  Servers are ranked by their own results of the last RANK_DAYS days: each result is
  scored against the fastest download of the same day, so a change of the line moves
- all servers alike, and a server's score is the median of its scores. The first test
- of a night fetches the nearest servers ("Get server list"); the tests use the ranked
- servers on that list, fastest first, and fall back to the server speedtest picks
- itself. Once a night (not on the first test, only with 3 or more tests a night) a
- server of the list without enough results gets a trial, so the ranking can learn.
+ all servers alike, and a server's score is the median of its scores. The first
+ interval of a night fetches the nearest servers ("Get server list"). Each interval
+ runs "multiple" tests, which take turns on the best ranked servers on that list (the
+ first test starts with the best, the second with the next one...) and fall back to
+ the other candidates and to the server speedtest picks itself. Once a night (not on
+ the first interval) a server of the list without enough results gets a trial, as an
+ extra test, so the ranking can learn. Every test is saved in the results (csv) and
+ logged to syslog; the shaper averages the results of an hour.
 """
 import csv
 import json
@@ -43,6 +46,7 @@ import os
 import statistics
 import subprocess
 import sys
+import syslog
 import time
 import xml.etree.ElementTree as ET
 from datetime import datetime
@@ -55,7 +59,7 @@ CONFIG = '/conf/config.xml'
 RANK_DAYS = 30      # results used for the ranking
 RANK_RESULTS = 2    # results a server needs to be ranked
 CANDIDATES = 3      # ranked servers tried before falling back
-TRIAL_TESTS = 3     # tests a night needed for a trial
+PAUSE = 10          # seconds between the tests of an interval
 
 
 def speedtest(*args):
@@ -68,13 +72,17 @@ def speedtest(*args):
         return {'error': 'no json from opn_speedtest.py: ' + proc.stderr.decode('utf-8', 'replace').strip()[-200:]}
 
 
-def frequency():
-    """ speedtests a night, as set on the page """
+def multiple():
+    """ speedtests at each interval, as set on the page (1 to 5) """
     try:
-        node = ET.parse(CONFIG).getroot().find('OPNsense/speedtest/shaper/frequency')
-        return int(node.text)
+        node = ET.parse(CONFIG).getroot().find('OPNsense/speedtest/shaper/multiple')
+        return max(1, min(5, int(node.text)))
     except (OSError, ET.ParseError, AttributeError, TypeError, ValueError):
         return 3
+
+
+def log(message):
+    syslog.syslog(syslog.LOG_NOTICE, message)
 
 
 def load_state():
@@ -139,21 +147,38 @@ def ranked(servers):
     return sorted(ids, key=lambda i: (-servers[i]['score'], -servers[i]['results']))
 
 
+def test(order, label):
+    """ one speedtest: the servers of order in turn ('0': speedtest's own pick) until one gives a result """
+    messages = []
+    for serverid in order:
+        result = speedtest(serverid)
+        what = 'server ' + serverid if serverid != '0' else 'speedtest\'s pick'
+        if 'error' in result or 'download' not in result:
+            messages.append('%s %s failed: %s' % (label, what, result.get('error', result)))
+            log(messages[-1])
+            continue
+        messages.append('%s %s: %s Mbit/s down, %s Mbit/s up' % (label, what, result['download'], result['upload']))
+        log(messages[-1])
+        return result, messages
+    return None, messages
+
+
 def run():
     state = load_state()
     night = datetime.now().strftime('%Y-%m-%d')
     first = state.get('night') != night
-    log = []
+    messages = []
     if first:
         # a new night: fetch the nearest servers and keep the previous list to compare
         found = speedtest('list')
         if isinstance(found, list) and found:
             state['previous'] = state.get('list', [])
             state['list'] = [{'id': str(s['id']), 'name': s['name'] + ', ' + s['location']} for s in found]
-            log.append('server list: ' + ', '.join(s['id'] for s in state['list']))
+            messages.append('server list: ' + ', '.join(s['id'] for s in state['list']))
         else:
-            log.append('server list failed, using the last one: ' +
-                       (found.get('error', '') if isinstance(found, dict) else ''))
+            messages.append('server list failed, using the last one: ' +
+                            (found.get('error', '') if isinstance(found, dict) else ''))
+        log(messages[-1])
         state.update({'night': night, 'tests': 0, 'trial': None})
     state['tests'] = state.get('tests', 0) + 1
     listed = [s['id'] for s in state.get('list', [])]
@@ -164,9 +189,8 @@ def run():
     # a list that could never be fetched does not filter, otherwise only listed servers
     candidates = [i for i in best if not listed or i in listed][:CANDIDATES]
 
-    order = []
     trial = None
-    if not first and not state.get('trial') and frequency() >= TRIAL_TESTS and listed:
+    if not first and not state.get('trial') and listed:
         # unranked servers of the list; the fewest trials first, then new on the list, then nearest
         trials = state.get('trials', {})
         unranked = [i for i in listed if i not in best]
@@ -175,23 +199,37 @@ def run():
             trials[trial] = trials.get(trial, 0) + 1
             state['trials'] = trials
             state['trial'] = trial
-            order.append(trial)
-    order += [i for i in candidates if i not in order]
-    # speedtest's own pick last, twice: it often picks a server that refuses the test
-    order += ['0', '0']
-
-    result = None
-    for serverid in order:
-        result = speedtest(serverid)
-        what = ('trial ' if serverid == trial else '') + ('server ' + serverid if serverid != '0' else 'speedtest\'s pick')
-        if 'error' in result or 'download' not in result:
-            log.append(what + ' failed: ' + str(result.get('error', result)))
-            continue
-        log.append('%s: %s Mbit/s down, %s Mbit/s up' % (what, result['download'], result['upload']))
-        break
     save_state(state)
-    out = dict(result or {'error': 'no server to test'})
-    out['scheduled'] = log
+
+    count = multiple()
+    results = []
+    error = None
+    for n in range(count):
+        if n > 0:
+            time.sleep(PAUSE)
+        # the tests take turns on the candidates: test n starts with candidate n
+        k = n % len(candidates) if candidates else 0
+        # speedtest's own pick last, twice: it often picks a server that refuses the test
+        order = candidates[k:] + candidates[:k] + ['0', '0']
+        result, lines = test(order, 'test %d/%d' % (n + 1, count))
+        messages += lines
+        if result is None:
+            error = lines[-1]
+        else:
+            results.append(result)
+    if trial:
+        # an extra test, on the trial server only
+        time.sleep(PAUSE)
+        result, lines = test([trial], 'trial')
+        messages += lines
+        if result is not None:
+            results.append(result)
+    out = {'tests': count + (1 if trial else 0), 'results': len(results), 'scheduled': messages}
+    if results:
+        out['download'] = round(statistics.mean(r['download'] for r in results), 2)
+        out['upload'] = round(statistics.mean(r['upload'] for r in results), 2)
+    else:
+        out['error'] = error or 'no server to test'
     print(json.dumps(out))
 
 
@@ -209,6 +247,7 @@ def servers_out():
 
 
 if __name__ == '__main__':
+    syslog.openlog('speedtest', 0, syslog.LOG_USER)
     try:
         if len(sys.argv) > 1 and sys.argv[1] == 'servers':
             servers_out()

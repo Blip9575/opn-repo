@@ -41,6 +41,13 @@
                 <MaximumValue>59</MaximumValue>
                 <ValidationMessage>The offset must be between 0 and 59 minutes.</ValidationMessage>
             </offset>
+            <multiple type="IntegerField">
+                <Default>3</Default>
+                <Required>Y</Required>
+                <MinimumValue>1</MinimumValue>
+                <MaximumValue>5</MaximumValue>
+                <ValidationMessage>The number of speedtests must be between 1 and 5.</ValidationMessage>
+            </multiple>
             <threshold_down type="IntegerField">
                 <Default>90</Default>
                 <Required>Y</Required>

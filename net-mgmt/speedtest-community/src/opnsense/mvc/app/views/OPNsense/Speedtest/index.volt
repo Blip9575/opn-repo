@@ -483,13 +483,13 @@
                     .text("{{ lang._('The WAN interface clamps TCP to its MTU minus 40, needed when the MTU is below 1500 (PPPoE). Set MSS clamping sets the MSS of the WAN interface to its MTU.') }}"))))
             .append($('<td/>').append($('#mssSetAct'))));
         mss_reload();
-        // servers of the scheduled speedtests (not a setting) below the schedule offset
-        $('[id="row_speedtest.shaper.offset"]').after($('<tr id="row_scheduled_servers"/>')
+        // servers of the scheduled speedtests (not a setting) below the last schedule setting
+        $('[id="row_speedtest.shaper.multiple"]').after($('<tr id="row_scheduled_servers"/>')
             .append($('<td/>').append($('<div class="control-label"/>').append($('<b/>').text("{{ lang._('Scheduled servers') }}"))))
             .append($('<td/>').append($('<input type="text" id="scheduled_servers" class="form-control" size="50" readonly="readonly"/>')
                     .attr('aria-label', "{{ lang._('Scheduled servers') }}"))
                 .append($('<div class="hidden" data-for="help_for_scheduled_servers"/>').append($('<small/>')
-                    .text("{{ lang._('Ranked by their results of the last 30 days, as a share of the fastest result of the same day. Each night starts with Get server list; the tests use the best ranked servers on it, then the server speedtest picks. Once a night a server of the list without results gets a trial.') }}"))))
+                    .text("{{ lang._('Ranked by their results of the last 30 days, as a share of the fastest result of the same day. Each night starts with Get server list; the tests of an interval take turns on the best ranked servers on it, then the server speedtest picks. Once a night a server of the list without results gets a trial.') }}"))))
             .append($('<td/>')));
         servers_reload();
         // read-only boxes in the colour of the editable ones (the theme greys out read-only inputs);

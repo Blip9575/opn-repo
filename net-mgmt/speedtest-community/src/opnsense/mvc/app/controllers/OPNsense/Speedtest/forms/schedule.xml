@@ -17,4 +17,10 @@
         <type>text</type>
         <help>Minutes past the hour the speedtests run at (0 to 59). The traffic shaper is set 15 minutes after the last speedtest</help>
     </field>
+    <field>
+        <id>speedtest.shaper.multiple</id>
+        <label>Multiple</label>
+        <type>text</type>
+        <help>Number of speedtests to run at each scheduled interval</help>
+    </field>
 </form>
