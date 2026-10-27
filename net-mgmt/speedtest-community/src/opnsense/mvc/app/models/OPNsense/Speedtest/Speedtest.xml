@@ -63,21 +63,14 @@
                 <ValidationMessage>The threshold must be between 50 and 100 percent.</ValidationMessage>
             </threshold_up>
             <days type="IntegerField">
-                <Default>7</Default>
+                <Default>1</Default>
                 <Required>Y</Required>
                 <MinimumValue>1</MinimumValue>
                 <MaximumValue>30</MaximumValue>
                 <ValidationMessage>The number of days must be between 1 and 30.</ValidationMessage>
             </days>
-            <percentile type="IntegerField">
-                <Default>90</Default>
-                <Required>Y</Required>
-                <MinimumValue>0</MinimumValue>
-                <MaximumValue>100</MaximumValue>
-                <ValidationMessage>The percentile must be between 0 and 100.</ValidationMessage>
-            </percentile>
             <minchange type="IntegerField">
-                <Default>5</Default>
+                <Default>2</Default>
                 <Required>Y</Required>
                 <MinimumValue>0</MinimumValue>
                 <MaximumValue>100</MaximumValue>

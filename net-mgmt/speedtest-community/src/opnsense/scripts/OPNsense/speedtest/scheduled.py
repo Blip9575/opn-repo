@@ -33,12 +33,17 @@
  scored against the fastest download of the same day, so a change of the line moves
  all servers alike, and a server's score is the median of its scores. The first
  interval of a night fetches the nearest servers ("Get server list"). Each interval
- runs "multiple" tests, which take turns on the best ranked servers on that list (the
- first test starts with the best, the second with the next one...) and fall back to
- the other candidates and to the server speedtest picks itself. Once a night (not on
- the first interval) a server of the list without enough results gets a trial, as an
- extra test, so the ranking can learn. Every test is saved in the results (csv) and
- logged to syslog; the shaper averages the results of an hour.
+ runs "multiple" tests, each on another region (a provider's server in one location):
+ the best ranked regions on that list. A region that keeps failing (RETRIES) is blocked
+ until the next day, a second failing region of the same provider blocks all of its
+ regions; the test moves on to the next region in the order of the list (speedtest's
+ own recommendation), so an hour keeps as many regions as tests and a slow server
+ can't fill it. Blocks only hold when another region answered in the interval: when
+ the first STOP_AFTER regions all fail, the line or the client is at fault, the
+ interval stops. Once a night (not on the first interval) a server of the list without
+ enough results gets a trial, as an extra test, so the ranking can learn; the shaper
+ leaves the trial results out (EXCLUDED). Every test is saved in the results (csv) and
+ logged to syslog; the shaper averages the regions of an hour.
 """
 import csv
 import json
@@ -58,8 +63,10 @@ CONFIG = '/conf/config.xml'
 
 RANK_DAYS = 30      # results used for the ranking
 RANK_RESULTS = 2    # results a server needs to be ranked
-CANDIDATES = 3      # ranked servers tried before falling back
 PAUSE = 10          # seconds between the tests of an interval
+RETRIES = [15, 30, 60]  # seconds before each retry of a failing region, then it is blocked
+STOP_AFTER = 3      # regions failing in a row, before any answered, that stop an interval
+EXCLUDED = 100      # trial results remembered for the shaper to leave out
 
 
 def speedtest(*args):
@@ -79,6 +86,25 @@ def multiple():
         return max(1, min(5, int(node.text)))
     except (OSError, ET.ParseError, AttributeError, TypeError, ValueError):
         return 3
+
+
+def provider(name):
+    """ the provider of a server, from its name 'sponsor, location' (the name is its region) """
+    return name.split(', ')[0]
+
+
+def is_blocked(name, blocked):
+    return name in blocked['regions'] or provider(name) in blocked['providers']
+
+
+def block(name, blocked):
+    """ block a region; a second region of the same provider blocks the provider; returns what was blocked """
+    if any(provider(r) == provider(name) for r in blocked['regions']):
+        blocked['providers'].append(provider(name))
+        blocked['regions'].append(name)
+        return '%s (all regions)' % provider(name)
+    blocked['regions'].append(name)
+    return name
 
 
 def log(message):
@@ -147,20 +173,61 @@ def ranked(servers):
     return sorted(ids, key=lambda i: (-servers[i]['score'], -servers[i]['results']))
 
 
-def test(order, label):
-    """ one speedtest: the servers of order in turn ('0': speedtest's own pick) until one gives a result """
+def test(pool, names, used, blocked, label, answered):
+    """
+    one speedtest on the first server of pool whose region was not used in this interval and
+    is not blocked ('0': speedtest's own pick, region unknown). A failing server is retried
+    after each of RETRIES, then its region is blocked (see block). Unless the interval
+    answered already, STOP_AFTER failing regions stop the test.
+    """
     messages = []
-    for serverid in order:
-        result = speedtest(serverid)
-        what = 'server ' + serverid if serverid != '0' else 'speedtest\'s pick'
-        if 'error' in result or 'download' not in result:
-            messages.append('%s %s failed: %s' % (label, what, result.get('error', result)))
-            log(messages[-1])
+    failed = 0
+    for serverid in pool:
+        name = names.get(serverid, '') if serverid != '0' else None
+        if name is not None and (name in used or is_blocked(name, blocked)):
             continue
-        messages.append('%s %s: %s Mbit/s down, %s Mbit/s up' % (label, what, result['download'], result['upload']))
+        what = 'server %s (%s)' % (serverid, name) if serverid != '0' else 'speedtest\'s pick'
+        for attempt in range(len(RETRIES) + 1):
+            if attempt > 0:
+                time.sleep(RETRIES[attempt - 1])
+            result = speedtest(serverid)
+            if 'error' not in result and 'download' in result:
+                messages.append('%s %s: %s Mbit/s down, %s Mbit/s up' % (label, what, result['download'], result['upload']))
+                log(messages[-1])
+                used.add(result.get('servername', name))
+                return result, messages
+            messages.append('%s %s failed (attempt %d): %s' % (label, what, attempt + 1, result.get('error', result)))
+            log(messages[-1])
+        if name is not None:
+            blocked['new'].append(block(name, blocked))
+        failed += 1
+        if not answered and failed >= STOP_AFTER:
+            messages.append('%s stopped: %d regions failed in a row, the line or the speedtest client is likely at fault' %
+                            (label, failed))
+            log(messages[-1])
+            return None, messages
+    if len(pool) > 1:
+        messages.append('%s skipped: no other region left' % label)
         log(messages[-1])
-        return result, messages
     return None, messages
+
+
+def pool_of(state, servers, best, count):
+    """
+    the servers the tests of an interval go through: the count best ranked regions on the
+    list, then the servers of the list in its order; without a list, the ranked servers and
+    speedtest's own pick
+    """
+    listed = [s['id'] for s in state.get('list', [])]
+    pool = [i for i in best if not listed or i in listed]
+    if listed:
+        return pool[:count] + [i for i in listed if i not in pool[:count]]
+    return pool + ['0']
+
+
+def blocked_of(state):
+    """ tonight's blocks: regions and providers (all their regions) """
+    return {'regions': list(state.get('blocked', [])), 'providers': list(state.get('blocked_providers', [])), 'new': []}
 
 
 def run():
@@ -179,52 +246,72 @@ def run():
             messages.append('server list failed, using the last one: ' +
                             (found.get('error', '') if isinstance(found, dict) else ''))
         log(messages[-1])
-        state.update({'night': night, 'tests': 0, 'trial': None})
+        state.update({'night': night, 'tests': 0, 'trial': None, 'blocked': [], 'blocked_providers': []})
     state['tests'] = state.get('tests', 0) + 1
     listed = [s['id'] for s in state.get('list', [])]
     previous = [s['id'] for s in state.get('previous', [])]
 
     servers = ranking()
     best = ranked(servers)
-    # a list that could never be fetched does not filter, otherwise only listed servers
-    candidates = [i for i in best if not listed or i in listed][:CANDIDATES]
-
-    trial = None
-    if not first and not state.get('trial') and listed:
-        # unranked servers of the list; the fewest trials first, then new on the list, then nearest
-        trials = state.get('trials', {})
-        unranked = [i for i in listed if i not in best]
-        if unranked:
-            trial = min(unranked, key=lambda i: (trials.get(i, 0), i in previous, listed.index(i)))
-            trials[trial] = trials.get(trial, 0) + 1
-            state['trials'] = trials
-            state['trial'] = trial
+    count = multiple()
+    pool = pool_of(state, servers, best, count)
+    names = {i: s['name'] for i, s in servers.items()}
+    names.update({s['id']: s['name'] for s in state.get('list', [])})
     save_state(state)
 
-    count = multiple()
+    # regions tested in this interval; blocks of this interval only hold when a region answered
+    used = set()
+    blocked = blocked_of(state)
     results = []
+    tests = 0
     error = None
     for n in range(count):
         if n > 0:
             time.sleep(PAUSE)
-        # the tests take turns on the candidates: test n starts with candidate n
-        k = n % len(candidates) if candidates else 0
-        # speedtest's own pick last, twice: it often picks a server that refuses the test
-        order = candidates[k:] + candidates[:k] + ['0', '0']
-        result, lines = test(order, 'test %d/%d' % (n + 1, count))
+        result, lines = test(pool, names, used, blocked, 'test %d/%d' % (n + 1, count), bool(results))
+        tests += 1
         messages += lines
         if result is None:
             error = lines[-1]
+            if pool[-1] != '0':
+                # no region left, or the interval stopped
+                break
         else:
             results.append(result)
-    if trial:
-        # an extra test, on the trial server only
-        time.sleep(PAUSE)
-        result, lines = test([trial], 'trial')
-        messages += lines
-        if result is not None:
-            results.append(result)
-    out = {'tests': count + (1 if trial else 0), 'results': len(results), 'scheduled': messages}
+    if results:
+        for what in blocked['new']:
+            messages.append('%s blocked until tomorrow' % what)
+            log(messages[-1])
+        state.update({'blocked': blocked['regions'], 'blocked_providers': blocked['providers']})
+    elif blocked['new']:
+        messages.append('no region answered, nothing blocked')
+        log(messages[-1])
+    save_state(state)
+
+    if not first and not state.get('trial') and listed and results:
+        # unranked servers of the list whose region was not tested in this interval and is not
+        # blocked; the fewest trials first, then new on the list, then nearest
+        trials = state.get('trials', {})
+        blocked = blocked_of(state)
+        unranked = [i for i in listed if i not in best and names[i] not in used and not is_blocked(names[i], blocked)]
+        if unranked:
+            trial = min(unranked, key=lambda i: (trials.get(i, 0), i in previous, listed.index(i)))
+            trials[trial] = trials.get(trial, 0) + 1
+            state.update({'trials': trials, 'trial': trial})
+            save_state(state)
+            # an extra test, on the trial server only; the shaper leaves its result out
+            time.sleep(PAUSE)
+            result, lines = test([trial], names, used, blocked, 'trial', True)
+            tests += 1
+            messages += lines
+            if result is None:
+                messages.append('%s blocked until tomorrow' % blocked['new'][-1])
+                log(messages[-1])
+                state.update({'blocked': blocked['regions'], 'blocked_providers': blocked['providers']})
+            else:
+                state['excluded'] = (state.get('excluded', []) + [csvtime(result['timestamp'])])[-EXCLUDED:]
+            save_state(state)
+    out = {'tests': tests, 'results': len(results), 'scheduled': messages}
     if results:
         out['download'] = round(statistics.mean(r['download'] for r in results), 2)
         out['upload'] = round(statistics.mean(r['upload'] for r in results), 2)
@@ -233,16 +320,34 @@ def run():
     print(json.dumps(out))
 
 
+def csvtime(timestamp):
+    """ a result's timestamp as opn_speedtest.py writes it to the csv """
+    return datetime.strptime(timestamp[:19], '%Y-%m-%dT%H:%M:%S').timestamp()
+
+
 def servers_out():
     state = load_state()
     listed = [s['id'] for s in state.get('list', [])]
+    names = {s['id']: s['name'] for s in state.get('list', [])}
     servers = ranking()
     best = ranked(servers)
+    count = multiple()
+    tonight = state.get('night') == datetime.now().strftime('%Y-%m-%d')
+    blocked = blocked_of(state if tonight else {})
     out = []
     for i in best:
         out.append({'id': i, 'name': servers[i]['name'], 'score': servers[i]['score'],
                     'results': servers[i]['results'], 'listed': not listed or i in listed})
-    print(json.dumps({'servers': out, 'candidates': [s['id'] for s in out if s['listed']][:CANDIDATES],
+    # the servers the next interval would test, one per region
+    candidates, seen = [], set()
+    for i in pool_of(state, servers, best, count):
+        name = servers[i]['name'] if i in servers else names.get(i, '')
+        if i != '0' and name not in seen and not is_blocked(name, blocked) and len(candidates) < count:
+            seen.add(name)
+            candidates.append({'id': i, 'name': name, 'score': servers[i]['score'] if i in best else None})
+    shown = blocked['providers'] + [r for r in blocked['regions'] if provider(r) not in blocked['providers']]
+    shown = ['%s (all regions)' % b if b in blocked['providers'] else b for b in shown]
+    print(json.dumps({'servers': out, 'candidates': candidates, 'blocked': shown,
                       'night': state.get('night', ''), 'trial': state.get('trial')}))
 
 

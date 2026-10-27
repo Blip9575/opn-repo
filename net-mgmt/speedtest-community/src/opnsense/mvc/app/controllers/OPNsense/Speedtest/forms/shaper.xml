@@ -33,18 +33,12 @@
         <id>speedtest.shaper.days</id>
         <label>Days of results</label>
         <type>text</type>
-        <help>Days of speedtest results to use. With a high percentile, a line that resyncs lower keeps its pipes too high until the faster results are older than this</help>
-    </field>
-    <field>
-        <id>speedtest.shaper.percentile</id>
-        <label>Percentile (%)</label>
-        <type>text</type>
-        <help>Which result to use: 100 is the fastest, 50 the median, 0 the slowest. A speedtest only measures less than the line carries (a slow server, other traffic during the test), so 90 is recommended; the thresholds keep the pipes below the line</help>
+        <help>Days of speedtest results to use. The results of each region (a provider's server in one location) in an hour are averaged, then the regions of the hour, then the hours of each day, then the days; only the hours with as many regions as the scheduled speedtests run (Multiple) count, all hours when there are none. The thresholds apply to that average. A pipe is lowered from the results of these days and raised from twice as many days, but never above the lowering figure, so a line that resyncs lower is followed within a day and recovers slowly</help>
     </field>
     <field>
         <id>speedtest.shaper.minchange</id>
         <label>Minimum change (%)</label>
         <type>text</type>
-        <help>Only update a pipe when the new bandwidth differs from the current one by at least this percentage.</help>
+        <help>A pipe is lowered at once when its figure is at least this percentage below it. It is raised when its figure is at least a quarter of this above it, by at most half of this per update from the second day after it was lowered and by at most this from the fourth day (nothing the day after)</help>
     </field>
 </form>
