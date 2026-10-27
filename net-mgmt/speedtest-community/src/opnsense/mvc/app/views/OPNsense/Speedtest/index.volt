@@ -492,7 +492,7 @@
             .append($('<td/>').append($('<input type="text" id="scheduled_servers" class="form-control" size="50" readonly="readonly"/>')
                     .attr('aria-label', "{{ lang._('Scheduled servers') }}"))
                 .append($('<div class="hidden" data-for="help_for_scheduled_servers"/>').append($('<small/>')
-                    .text("{{ lang._('Ranked by their results of the last 30 days, as a share of the fastest result of the same day. Each night starts with Get server list; each test of an interval uses another region (a provider's server in one location), the best ranked on the list. A region that fails 4 times (retried after 15, 30 and 60 seconds) is blocked until the next day, a second failing region of the same provider blocks all its regions; the test moves on to the next region in the order of the list. Once a night a server of the list without results gets a trial, which the shaper leaves out.') }}"))))
+                    .text("{{ lang._('Ranked by their results of the last 30 days, as a share of the fastest result of the same day. Each night starts with Get server list; each test of an interval uses another region (a server of a provider in one location), the best ranked on the list. A region that fails 4 times (retried after 15, 30 and 60 seconds) is blocked until the next day, a second failing region of the same provider blocks all its regions; the test moves on to the next region in the order of the list. Once a night a server of the list without results gets a trial, which the shaper leaves out.') }}"))))
             .append($('<td/>')));
         servers_reload();
         // read-only boxes in the colour of the editable ones (the theme greys out read-only inputs);
