@@ -130,7 +130,7 @@
 <div class="content-box">
     <div>
         <div class="table-responsive form-inline">
-        <table class="table table-striped table-condensed" style="table-layout: fixed; width: 100%;">
+        <table id="run_speedtest_table" class="table table-striped table-condensed" style="table-layout: fixed; width: 100%;">
             <colgroup>
                 <col style="width: 25%;" />
                 <col style="width: 40%;" />
@@ -183,7 +183,7 @@
                         <small id="serverid_error" class="text-danger" style="display:none"></small>
                     </td>
                     <td>
-                        <button class="btn btn-primary" id="reportAct" type="button">
+                        <button class="btn btn-default" id="reportAct" type="button">
                             <b>{{ lang._('run speedtest') }}</b> <i id="reportAct_progress"></i></button>
                     </td>
                 </tr>
@@ -296,6 +296,20 @@
             $('#log_block').html(obj);
         });
     };
+    // the rows of "Run speedtest" and of the schedule form below it alternate like one striped
+    // table (as the Traffic shaper form does): hidden rows still count for the theme's stripes, so
+    // hidden padding rows set each visible row's place; the schedule form starts with a striped
+    // (odd) row, so the last visible row here takes an even place
+    function speedtest_stripes() {
+        var tbody = $('#run_speedtest_table > tbody');
+        tbody.children('tr.stripe-pad').remove();
+        var rows = tbody.children('tr').filter(function() { return this.style.display !== 'none'; });
+        rows.each(function(i) {
+            if (($(this).index() + 1) % 2 !== (rows.length - 1 - i) % 2) {
+                $('<tr class="stripe-pad" style="display: none;"></tr>').insertBefore(this);
+            }
+        });
+    };
     // updates of the pipes, newest first; errors span the row
     function history_reload() {
         ajaxCall("/api/speedtest/shaper/history", {}, function(rows, status) {
@@ -399,6 +413,7 @@
             $('#moduleInstallAct').toggle(button !== '');
             // tests need a module; speedtest-cli still works until it is replaced
             $('.canruntests').toggle(!!l && (l.version == 'binary' || l.version == 'cli'));
+            speedtest_stripes();
         });
     };
 
@@ -589,6 +604,7 @@
                         $("#moduleInstallAct").prop('disabled', false);
                         $('#module_output').text(r && r.output ? api_text(r.output) : "{{ lang._('No response') }}");
                         $('#module_output_row').show();
+                        speedtest_stripes();
                         version_reload();
                     });
                 });
