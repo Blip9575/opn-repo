@@ -20,6 +20,12 @@
 *    ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 *    POSSIBILITY OF SUCH DAMAGE.
 #}
+<style>
+    /* every row of the page's tables centred vertically, the log switches on one line with their buttons */
+    .content-box table > tbody > tr > td, .content-box table > thead > tr > th { vertical-align: middle; }
+    .log-switch { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5em; padding: 1ex 0; }
+    .log-switch .btn { margin-left: 0.5em; }
+</style>
 {# heading above its box like "Run speedtest" and "Traffic shaper", the page's help switch on the same line #}
 <div style="display: flex; justify-content: space-between; align-items: baseline;">
     <h2>{{ lang._('Statistics') }}</h2>
@@ -185,27 +191,25 @@
         <div class="canruntests" style="display: none;">
         {{ partial("layout_partials/base_form",['fields':scheduleForm,'id':'frm_schedule'])}}
         <div class="col-md-12">
-            <hr/>
             <button class="btn btn-primary" id="scheduleSaveAct" type="button">
                 <b>{{ lang._('Save') }}</b> <i id="scheduleSaveAct_progress"></i></button>
             <button class="btn btn-default" id="scheduleApplyAct" type="button">
                 <b>{{ lang._('Apply now') }}</b> <i id="scheduleApplyAct_progress"></i></button>
-            <br/><br/>
-            <div id="schedule_result"></div>
-            <br/>
+            <div id="schedule_result" style="margin-top: 1ex;"></div>
         </div>
         <div class="clearfix"></div>
         </div>
         <div class="col-md-12">
-            <hr/>
-            <a href="#" class="log-toggle" data-rows="speedtest-log"><i class="fa fa-toggle-off text-danger"></i></a>
-            <small>{{ lang._('show log') }}</small>
-            <span class="speedtest-log" style="display: none; margin-left: 2em;">
-                <a href="/api/speedtest/download/csv" class="btn btn-sm btn-primary"><b>{{ lang._('Export log') }}</b></a>
-                <button class="btn btn-sm btn-primary" id="deletelogAct" type="button">
-                    <b>{{ lang._('Clear log') }}</b> <i id="deletelogAct_progress"></i></button>
-            </span>
-            <table class="table table-condensed speedtest-log" style="display: none; margin-top: 1ex;">
+            <div class="log-switch">
+                <a href="#" class="log-toggle" data-rows="speedtest-log"><i class="fa fa-toggle-off text-danger"></i></a>
+                <span>{{ lang._('show log') }}</span>
+                <span class="speedtest-log" style="display: none;">
+                    <a href="/api/speedtest/download/csv" class="btn btn-sm btn-primary"><b>{{ lang._('Export log') }}</b></a>
+                    <button class="btn btn-sm btn-primary" id="deletelogAct" type="button">
+                        <b>{{ lang._('Clear log') }}</b> <i id="deletelogAct_progress"></i></button>
+                </span>
+            </div>
+            <table class="table table-condensed speedtest-log" style="display: none;">
                 <thead>
                     <tr>
                         <th class="text-left">{{ lang._('Timestamp (GMT)') }}</th>
@@ -227,7 +231,6 @@
 <div class="content-box" id="shaper">
     {{ partial("layout_partials/base_form",['fields':shaperForm,'id':'frm_shaper'])}}
     <div class="col-md-12">
-        <hr/>
         <button class="btn btn-primary" id="shaperSaveAct" type="button">
             <b>{{ lang._('Save') }}</b> <i id="shaperSaveAct_progress"></i></button>
         <button class="btn btn-default" id="shaperApplyAct" type="button">
@@ -236,26 +239,25 @@
             <b>{{ lang._('Create shaper') }}</b> <i id="shaperCreateAct_progress"></i></button>
         <button class="btn btn-default" id="mssSetAct" type="button" style="display: none;">
             <b>{{ lang._('Set MSS clamping') }}</b> <i id="mssSetAct_progress"></i></button>
-        <br/><br/>
-        <div id="shaper_result"></div>
-        <br/>
+        <div id="shaper_result" style="margin-top: 1ex;"></div>
     </div>
     <div class="col-md-12">
-        <hr/>
-        <a href="#" class="log-toggle" data-rows="shaper-log"><i class="fa fa-toggle-off text-danger"></i></a>
-        <small>{{ lang._('show changes') }}</small>
-        <span class="shaper-log" style="display: none; margin-left: 2em;">
-            <a href="/api/speedtest/shaper/export" class="btn btn-sm btn-primary"><b>{{ lang._('Export') }}</b></a>
-            <button class="btn btn-sm btn-primary" id="clearhistoryAct" type="button">
-                <b>{{ lang._('Clear') }}</b> <i id="clearhistoryAct_progress"></i></button>
-        </span>
-        <table class="table table-condensed shaper-log" style="display: none; margin-top: 1ex;">
+        <div class="log-switch">
+            <a href="#" class="log-toggle" data-rows="shaper-log"><i class="fa fa-toggle-off text-danger"></i></a>
+            <span>{{ lang._('show changes') }}</span>
+            <span class="shaper-log" style="display: none;">
+                <a href="/api/speedtest/shaper/export" class="btn btn-sm btn-primary"><b>{{ lang._('Export') }}</b></a>
+                <button class="btn btn-sm btn-primary" id="clearhistoryAct" type="button">
+                    <b>{{ lang._('Clear') }}</b> <i id="clearhistoryAct_progress"></i></button>
+            </span>
+        </div>
+        <table class="table table-condensed shaper-log" style="display: none;">
             <thead>
                 <tr>
-                    <th class="text-left" style="width: 10em;">{{ lang._('Time (UTC)') }}</th>
-                    <th class="text-left">{{ lang._('Download (Mbit/s)') }}</th>
-                    <th class="text-left">{{ lang._('Upload (Mbit/s)') }}</th>
-                    <th class="text-left" style="width: 11em;">{{ lang._('Best down / up') }}</th>
+                    <th class="text-left">{{ lang._('Timestamp (GMT)') }}</th>
+                    <th class="text-left">{{ lang._('Download') }}</th>
+                    <th class="text-left">{{ lang._('Upload') }}</th>
+                    <th class="text-left">{{ lang._('Best down / up') }}</th>
                     <th class="text-left">{{ lang._('Based on') }}</th>
                 </tr>
             </thead>
@@ -306,23 +308,22 @@
                 var fmt = function(v) {
                     return parseFloat(v) < 20 ? parseFloat(v).toFixed(3).replace(/\.?0+$/, '') : parseFloat(v).toFixed(0);
                 };
-                var cell = $('<td class="text-left"/>').append(before === after ? $('<b/>').text(fmt(after)) :
-                    $('<b/>').text(fmt(before) + ' \u2192 ' + fmt(after)));
-                return cell.append($('<br/>')).append($('<small/>').text(r[dir]));
+                return $('<td class="text-left"/>').text((before === after ? fmt(after) : fmt(before) + ' \u2192 ' + fmt(after)) + ' Mbit/s')
+                    .append($('<br/>'), document.createTextNode(r[dir]));
             };
             var best = function(r, use) {
                 return r[use + ' download (Mbit/s)'] === '' ? '' : parseFloat(r[use + ' download (Mbit/s)']).toFixed(2) +
                     ' / ' + parseFloat(r[use + ' upload (Mbit/s)']).toFixed(2);
             };
             $.each(Array.isArray(rows) ? rows : [], function(i, r) {
-                var tr = $('<tr/>').append(td(r['time (UTC)'].substr(0, 16)));
+                var tr = $('<tr/>').append(td(r['time (UTC)'].replace(' ', 'T')));
                 if (r.status === 'error') {
                     tr.append($('<td colspan="4" class="text-left text-danger"/>').text(r.message));
                 } else {
                     var raise = best(r, 'raise');
                     tr.append(pipe(r, 'download'), pipe(r, 'upload'),
                         td(best(r, 'best') + (raise !== '' ? ' (' + raise + ')' : '')),
-                        $('<td class="text-left"/>').append($('<small/>').text(r.basis)));
+                        td(r.basis));
                 }
                 body.append(tr);
             });
