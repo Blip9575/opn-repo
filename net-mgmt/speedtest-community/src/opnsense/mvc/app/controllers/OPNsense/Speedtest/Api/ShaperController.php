@@ -200,7 +200,7 @@ class ShaperController extends ApiMutableModelControllerBase
     }
 
     /**
-     * set the shaper pipes from the speedtest average
+     * set the shaper pipes from the best speedtest results
      */
     public function applyAction()
     {

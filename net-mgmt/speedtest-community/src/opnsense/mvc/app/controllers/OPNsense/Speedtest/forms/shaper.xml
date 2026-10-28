@@ -33,12 +33,12 @@
         <id>speedtest.shaper.days</id>
         <label>Days of results</label>
         <type>text</type>
-        <help>Days of speedtest results to use. The results of each region (a provider's server in one location) in an hour are averaged, then the regions of the hour, then the hours of each day, then the days; only the hours with as many regions as the scheduled speedtests run (Multiple) count, all hours when there are none. The thresholds apply to that average. A pipe is lowered from the results of these days and raised from twice as many days, but never above the lowering figure, so a line that resyncs lower is followed within a day and recovers slowly</help>
+        <help>Days of speedtest results to use. Each hour counts with its best result and each day with its best hour, so slow servers and busy hours are left out; a result far above the others of its hour (more than 25% above their median), or an hour far above the other hours of its day, is a measuring error and left out too. The thresholds apply to that best result. A pipe is lowered from the best day of these days, so a line that resyncs lower is followed the next morning, and raised to the lowest best day of twice as many days (at least two), never above the lowering figure, so it rises after two good days in a row</help>
     </field>
     <field>
         <id>speedtest.shaper.minchange</id>
         <label>Minimum change (%)</label>
         <type>text</type>
-        <help>A pipe is lowered at once when its figure is at least this percentage below it. It is raised when its figure is at least a quarter of this above it, by at most half of this per update from the second day after it was lowered and by at most this from the fourth day (nothing the day after)</help>
+        <help>A pipe is lowered at once when its figure is at least this percentage below it. It is raised at once to its figure when that is at least a quarter of this above it, but not the day after it was lowered</help>
     </field>
 </form>

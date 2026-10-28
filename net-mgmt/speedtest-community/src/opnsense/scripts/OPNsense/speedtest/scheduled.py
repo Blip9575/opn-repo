@@ -41,9 +41,9 @@
  can't fill it. Blocks only hold when another region answered in the interval: when
  the first STOP_AFTER regions all fail, the line or the client is at fault, the
  interval stops. Once a night (not on the first interval) a server of the list without
- enough results gets a trial, as an extra test, so the ranking can learn; the shaper
- leaves the trial results out (EXCLUDED). Every test is saved in the results (csv) and
- logged to syslog; the shaper averages the regions of an hour.
+ enough results gets a trial, as an extra test, so the ranking can learn. Every test is
+ saved in the results (csv) and logged to syslog; the shaper takes the best result of
+ each hour.
 """
 import csv
 import json
@@ -66,7 +66,6 @@ RANK_RESULTS = 2    # results a server needs to be ranked
 PAUSE = 10          # seconds between the tests of an interval
 RETRIES = [15, 30, 60]  # seconds before each retry of a failing region, then it is blocked
 STOP_AFTER = 3      # regions failing in a row, before any answered, that stop an interval
-EXCLUDED = 100      # trial results remembered for the shaper to leave out
 
 
 def speedtest(*args):
@@ -299,7 +298,7 @@ def run():
             trials[trial] = trials.get(trial, 0) + 1
             state.update({'trials': trials, 'trial': trial})
             save_state(state)
-            # an extra test, on the trial server only; the shaper leaves its result out
+            # an extra test, on the trial server only
             time.sleep(PAUSE)
             result, lines = test([trial], names, used, blocked, 'trial', True)
             tests += 1
@@ -308,9 +307,7 @@ def run():
                 messages.append('%s blocked until tomorrow' % blocked['new'][-1])
                 log(messages[-1])
                 state.update({'blocked': blocked['regions'], 'blocked_providers': blocked['providers']})
-            else:
-                state['excluded'] = (state.get('excluded', []) + [csvtime(result['timestamp'])])[-EXCLUDED:]
-            save_state(state)
+                save_state(state)
     out = {'tests': tests, 'results': len(results), 'scheduled': messages}
     if results:
         out['download'] = round(statistics.mean(r['download'] for r in results), 2)
@@ -318,11 +315,6 @@ def run():
     else:
         out['error'] = error or 'no server to test'
     print(json.dumps(out))
-
-
-def csvtime(timestamp):
-    """ a result's timestamp as opn_speedtest.py writes it to the csv """
-    return datetime.strptime(timestamp[:19], '%Y-%m-%dT%H:%M:%S').timestamp()
 
 
 def servers_out():

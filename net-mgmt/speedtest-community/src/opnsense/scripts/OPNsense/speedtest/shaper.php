@@ -30,10 +30,10 @@
 /*
  * Set the traffic shaper pipes of an interface from the speedtest results.
  *
- *   shaper.php set     average the results of the last N days (lowering) and 2N days
- *                      (raising), scale by the thresholds (and the DSL overhead of the
- *                      upload's ACKs); lower a pipe at once by the minimum change, raise
- *                      it slowly (see RAISE_* below)
+ *   shaper.php set     the best result of each day: the best of the last N days lowers a
+ *                      pipe at once by the minimum change, the lowest of the last 2N days
+ *                      raises it (see RAISE_* below); scaled by the thresholds (and the
+ *                      DSL overhead of the upload's ACKs)
  *   shaper.php create  create pipes, queues and rules on the interface for the
  *                      directions that have none yet
  *   shaper.php sync    when the interface address changed (newwanip hook), update
@@ -59,8 +59,6 @@ use OPNsense\Speedtest\Speedtest;
 use OPNsense\TrafficShaper\TrafficShaper;
 
 const CSV_FILE = '/usr/local/opnsense/scripts/OPNsense/speedtest/speedtest.csv';
-// state of the scheduled speedtests (scheduled.py): "excluded" lists the timestamps of trial results
-const SCHEDULED_FILE = '/usr/local/opnsense/scripts/OPNsense/speedtest/scheduled.json';
 // when a pipe was last lowered, per direction
 const STATE_FILE = '/usr/local/opnsense/scripts/OPNsense/speedtest/shaper.json';
 const LOCK_FILE = '/tmp/speedtest_shaper.lock';
@@ -77,17 +75,18 @@ const PPPOE_OVERHEAD = 8;
 const TCPIP_HEADERS = 40;
 const ACK_BYTES = 52;
 
-// raising a pipe, relative to the minimum change: from twice the days of results, but not above
-// the lowering figure; only when at least a quarter of the minimum change above the pipe; nothing
-// the day after the pipe was lowered, at most half the minimum change per update from the second
-// day, the whole minimum change from the fourth
+// a result more than this factor above the median of its hour, or an hour's best more than this
+// above the median of the hours of its day, is left out (a measuring error)
+const OUTLIER = 1.25;
+// raising a pipe: to the lowest best of twice the days of results (at least RAISE_DAYS days with
+// results, so two good nights in a row), but not above the lowering figure; only when at least a
+// quarter of the minimum change above the pipe and not the day after the pipe was lowered
 const RAISE_DAYS = 2;
 const RAISE_FROM = 0.25;
-const RAISE_STEPS = [2 => 0.5, 4 => 1];
+const RAISE_HOLD = 2;
 
 // speedtest.csv columns
 const CSV_TIMESTAMP = 0;
-const CSV_SERVERNAME = 3;
 const CSV_DOWNLOAD = 5;
 const CSV_UPLOAD = 6;
 
@@ -120,68 +119,61 @@ function finish($result)
 }
 
 /**
- * download and upload (Mbit/s) of the results of the last $days days: the results of a region
- * (a provider's server in one location) in an hour are averaged, then the regions of the hour
- * (the scheduled speedtests test $regions regions each hour), then the hours of each day (24
- * hours back from now), then the days. Only the hours with at least $regions regions count, all
- * hours when there are none. Trial results of the scheduled speedtests are left out.
+ * the values without those more than OUTLIER above their median
  */
-function speedtest_estimate($days, $regions)
+function without_outliers($values)
 {
-    $state = json_decode(@file_get_contents(SCHEDULED_FILE) ?: '{}', true);
-    $excluded = is_array($state['excluded'] ?? null) ? array_map('floatval', $state['excluded']) : [];
+    sort($values);
+    $n = count($values);
+    $median = $n % 2 ? $values[intdiv($n, 2)] : ($values[$n / 2 - 1] + $values[$n / 2]) / 2;
+    return array_filter($values, function ($value) use ($median) {
+        return $value <= $median * OUTLIER;
+    });
+}
+
+/**
+ * the best download and upload (Mbit/s) of each of the last $days days (24 hours back from now,
+ * day 0 the latest): the best result of each hour, then the best hour of the day, leaving out
+ * the outliers of either step. Taking the best leaves out the slow servers and busy hours, so
+ * every result counts, whatever the number of regions in its hour.
+ */
+function speedtest_days($days)
+{
     // the csv timestamp is the UTC time read as local time, compare in the same terms
     $now = time() - (int)date('Z');
     $since = $now - $days * 86400;
-    $rows = [];
+    $hours = [];
+    $probes = 0;
     if (($fh = @fopen(CSV_FILE, 'r')) !== false) {
         fgetcsv($fh, 0, ',', '"', '\\'); // header
         while (($row = fgetcsv($fh, 0, ',', '"', '\\')) !== false) {
             if (isset($row[CSV_UPLOAD]) && is_numeric($row[CSV_TIMESTAMP]) && $row[CSV_TIMESTAMP] >= $since &&
                 is_numeric($row[CSV_DOWNLOAD]) && is_numeric($row[CSV_UPLOAD]) &&
-                $row[CSV_DOWNLOAD] > 0 && $row[CSV_UPLOAD] > 0 &&
-                !in_array((float)$row[CSV_TIMESTAMP], $excluded)) {
-                $rows[] = $row;
+                $row[CSV_DOWNLOAD] > 0 && $row[CSV_UPLOAD] > 0) {
+                $hours[intdiv((int)$row[CSV_TIMESTAMP], 3600)][] = $row;
+                $probes++;
             }
         }
         fclose($fh);
     }
-    if (count($rows) == 0) {
+    if ($probes == 0) {
         return null;
     }
-    // hour => region ("sponsor, location") => results
-    $hours = [];
-    foreach ($rows as $row) {
-        $hours[intdiv((int)$row[CSV_TIMESTAMP], 3600)][$row[CSV_SERVERNAME]][] = $row;
-    }
-    $full = array_filter($hours, function ($hour) use ($regions) {
-        return count($hour) >= $regions;
-    });
-    $estimate = ['days' => $days, 'regions' => count($full) > 0 ? $regions : 0];
-    if (count($full) > 0) {
-        $hours = $full;
-    }
-    $estimate['hours'] = count($hours);
-    $estimate['probes'] = array_sum(array_map(function ($hour) {
-        return array_sum(array_map('count', $hour));
-    }, $hours));
+    $result = ['days' => $days, 'hours' => count($hours), 'probes' => $probes];
     foreach (DIRECTIONS as $dir => $props) {
-        // day (0: the last 24 hours) => hourly averages
+        // day => best of each hour
         $daily = [];
-        foreach ($hours as $hour => $byregion) {
-            $means = [];
-            foreach ($byregion as $results) {
-                $means[] = array_sum(array_map('floatval', array_column($results, $props['column']))) / count($results);
-            }
-            $daily[intdiv(max(0, $now - $hour * 3600 - 1), 86400)][] = array_sum($means) / count($means);
+        foreach ($hours as $hour => $rows) {
+            $daily[intdiv(max(0, $now - $hour * 3600 - 1), 86400)][] =
+                max(without_outliers(array_map('floatval', array_column($rows, $props['column']))));
         }
-        $values = array_map(function ($day) {
-            return array_sum($day) / count($day);
+        ksort($daily);
+        $result[$dir] = array_map(function ($best) {
+            return max(without_outliers($best));
         }, $daily);
-        $estimate[$dir] = array_sum($values) / count($values);
     }
-    $estimate['dayscount'] = count($daily);
-    return $estimate;
+    $result['dayscount'] = count($daily);
+    return $result;
 }
 
 /**
@@ -494,20 +486,23 @@ if ($sync !== null && $sync['status'] == 'error') {
 $days = (int)(string)$settings->days;
 $thresholds = ['download' => (int)(string)$settings->threshold_down, 'upload' => (int)(string)$settings->threshold_up];
 $link = wan_link($interface, (string)$settings->dsltype);
-// figures for lowering (the days of results) and raising (twice as many, not above the lowering one)
-// the scheduled speedtests test as many regions in an hour as their "multiple" setting
-$regions = (int)(string)$settings->multiple;
-$avg = ['lower' => speedtest_estimate($days, $regions), 'raise' => speedtest_estimate($days * RAISE_DAYS, $regions)];
-if ($avg['lower'] === null) {
+// figures for lowering (the best day of the days of results) and raising (the lowest best of twice
+// as many days, not above the lowering one; none without RAISE_DAYS days of results)
+$best = ['lower' => speedtest_days($days), 'raise' => speedtest_days($days * RAISE_DAYS)];
+if ($best['lower'] === null) {
     finish(['status' => 'error', 'message' => sprintf('no speedtest results of the last %d day(s)', $days)]);
 }
+$figure = [];
 foreach (DIRECTIONS as $dir => $props) {
-    $avg['raise'][$dir] = min($avg['raise'][$dir], $avg['lower'][$dir]);
+    $figure['lower'][$dir] = max($best['lower'][$dir]);
+    if ($best['raise']['dayscount'] >= RAISE_DAYS) {
+        $figure['raise'][$dir] = min(min($best['raise'][$dir]), $figure['lower'][$dir]);
+    }
 }
-$result = ['status' => 'unchanged', 'interface' => $interface, 'days' => $days, 'probes' => $avg['lower']['probes'],
-    'hours' => $avg['lower']['hours'], 'thresholds' => $thresholds, 'link' => $link];
+$result = ['status' => 'unchanged', 'interface' => $interface, 'days' => $days, 'probes' => $best['lower']['probes'],
+    'hours' => $best['lower']['hours'], 'thresholds' => $thresholds, 'link' => $link];
 $targets = [];
-foreach ($avg as $use => $figures) {
+foreach ($figure as $use => $figures) {
     $kbit = [];
     foreach (DIRECTIONS as $dir => $props) {
         $kbit[$dir] = $figures[$dir] * 1000 * $thresholds[$dir] / 100;
@@ -520,18 +515,21 @@ foreach ($avg as $use => $figures) {
     }
 }
 foreach (DIRECTIONS as $dir => $props) {
-    $result[$dir] = ['estimate_mbit' => round($avg['lower'][$dir], 2), 'target_mbit' => $targets['lower'][$dir]['kbit'] / 1000,
-        'raise_mbit' => $targets['raise'][$dir]['kbit'] / 1000];
+    $result[$dir] = ['estimate_mbit' => round($figure['lower'][$dir], 2), 'target_mbit' => $targets['lower'][$dir]['kbit'] / 1000,
+        'raise_mbit' => isset($targets['raise']) ? $targets['raise'][$dir]['kbit'] / 1000 : null];
 }
-$hours = function ($figures) use ($regions) {
-    return sprintf('%d of the last %d day(s): %d hours ', $figures['dayscount'], $figures['days'], $figures['hours']) .
-        ($figures['regions'] > 0 ? sprintf('with %d regions', $regions) : sprintf('(none with %d regions)', $regions)) .
-        sprintf(', %d results', $figures['probes']);
+$days_of = function ($figures) {
+    return sprintf('%d of the last %d day(s), %d hours, %d results', $figures['dayscount'], $figures['days'],
+        $figures['hours'], $figures['probes']);
 };
-$basis = sprintf(' (average of %s; for raising %s; download x %d%%, upload x %d%%%s)',
-    $hours($avg['lower']), $hours($avg['raise']),
-    $thresholds['download'], $thresholds['upload'],
-    $link['dsl'] != '' ? sprintf(', %s%s MTU %d', strtoupper($link['dsl']), $link['pppoe'] ? ' PPPoE' : '', $link['mtu']) : '');
+$basis = sprintf(
+    ' (best of %s; for raising lowest best of %s; download x %d%%, upload x %d%%%s)',
+    $days_of($best['lower']),
+    $best['raise'] !== null ? $days_of($best['raise']) : 'none',
+    $thresholds['download'],
+    $thresholds['upload'],
+    $link['dsl'] != '' ? sprintf(', %s%s MTU %d', strtoupper($link['dsl']), $link['pppoe'] ? ' PPPoE' : '', $link['mtu']) : ''
+);
 
 $shaper = new TrafficShaper();
 $found = discover_pipes($shaper, $interface);
@@ -559,7 +557,8 @@ if ($action == 'set') {
         $result[$dir]['pipe'] = sprintf('%s (%s)', $pipe->description, $pipe->number);
         $result[$dir]['current_mbit'] = $current / 1000;
         $lower = $targets['lower'][$dir]['kbit'];
-        $raise = $targets['raise'][$dir]['kbit'];
+        // no raising figure without RAISE_DAYS days of results
+        $raise = isset($targets['raise']) ? $targets['raise'][$dir]['kbit'] : 0;
         $down = $current > 0 ? ($current - $lower) * 100 / $current : 100;
         $up = $current > 0 ? ($raise - $current) * 100 / $current : 0;
         // whole days since the pipe was lowered (an hour early still counts, the update runs daily)
@@ -571,25 +570,11 @@ if ($action == 'set') {
             $why = 'lowered';
             $state[$dir] = time();
         } elseif ($raise > $current && $up >= $minchange * RAISE_FROM) {
-            $step = 0;
-            foreach (RAISE_STEPS as $from => $share) {
-                if ($since >= $from) {
-                    $step = $minchange * $share;
-                }
-            }
-            if ($step <= 0 && $minchange > 0) {
+            if ($since < RAISE_HOLD && $minchange > 0) {
                 $why = sprintf('raise to %.2f held, %d day(s) after it was lowered', $raise / 1000, $since);
             } else {
-                $target = pipe_target($minchange > 0 ? min($raise, $current * (1 + $step / 100)) : $raise);
-                if ($target['metric'] == 'Mbit' && $target['kbit'] <= $current) {
-                    // whole Mbit/s: a step below 1 Mbit/s rounds away, take 1 Mbit/s
-                    $target = pipe_target(min($raise, $current + 1000));
-                }
-                $why = $minchange > 0 ? sprintf('raised by at most %s%% toward %.2f', $step, $raise / 1000) : 'raised';
-                if ($target['kbit'] <= $current) {
-                    $target = null;
-                    $why = null;
-                }
+                $target = $targets['raise'][$dir];
+                $why = 'raised';
             }
         }
         if ($target === null && (string)$pipe->bandwidthMetric != pipe_target($current)['metric']) {
@@ -608,8 +593,14 @@ if ($action == 'set') {
         } else {
             $result[$dir]['action'] = 'unchanged';
             $msgs[] = sprintf('%s %s: %.2f Mbit/s kept (%s)', $dir, $pipe->description, $current / 1000, $why ?? sprintf(
-                'lower %.2f, raise %.2f: change -%.1f%%/+%.1f%%, minimum -%s%%/+%s%%',
-                $lower / 1000, $raise / 1000, max(0, $down), max(0, $up), $minchange, $minchange * RAISE_FROM));
+                'lower %.2f, raise %s: change -%.1f%%/+%.1f%%, minimum -%s%%/+%s%%',
+                $lower / 1000,
+                isset($targets['raise']) ? sprintf('%.2f', $raise / 1000) : sprintf('none (%d days of results needed)', RAISE_DAYS),
+                max(0, $down),
+                max(0, $up),
+                $minchange,
+                $minchange * RAISE_FROM
+            ));
         }
     }
     $result['message'] = implode('; ', $msgs) . $basis;
