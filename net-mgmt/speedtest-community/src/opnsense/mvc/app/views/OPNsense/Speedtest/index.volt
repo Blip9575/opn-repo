@@ -342,7 +342,7 @@
                     var raise = best(r, 'raise');
                     tr.append(pipe(r, 'download'), pipe(r, 'upload'),
                         td(best(r, 'best') === '' ? '\u2013' : best(r, 'best') + (raise !== '' ? ' (' + raise + ')' : '')),
-                        $('<td class="text-left"/>').text(r.basis));
+                        $('<td class="text-left"/>').append($('<small/>').text(r.basis)));
                 }
                 body.append(tr);
             });
