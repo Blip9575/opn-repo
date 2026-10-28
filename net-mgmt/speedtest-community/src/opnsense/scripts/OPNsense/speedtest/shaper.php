@@ -87,7 +87,8 @@ const ACK_BYTES = 52;
 const OUTLIER = 1.25;
 // raising a pipe: to the lowest best of twice the days of results (at least RAISE_DAYS days with
 // results, so two good nights in a row), but not above the lowering figure; only when at least a
-// quarter of the minimum change above the pipe and not the day after the pipe was lowered
+// quarter of the minimum change above the pipe and not on the date after the pipe was lowered (the
+// next daily update); "set now" (Apply now) is never held
 const RAISE_DAYS = 2;
 const RAISE_FROM = 0.25;
 const RAISE_HOLD = 2;
@@ -581,9 +582,11 @@ function mss_status($interface)
 }
 
 $action = $argv[1] ?? '';
+// Apply now on the page: settings take effect at once, a raise is not held
+$applynow = $action == 'set' && ($argv[2] ?? '') == 'now';
 if (!in_array($action, ['set', 'create', 'rules', 'sync', 'mss', 'setmss', 'history', 'clearhistory'])) {
     echo json_encode(['status' => 'error', 'message' =>
-        'usage: shaper.php set|create|sync|mss|setmss|history [csv]|clearhistory']) . PHP_EOL;
+        'usage: shaper.php set [now]|create|sync|mss|setmss|history [csv]|clearhistory']) . PHP_EOL;
     exit(0);
 }
 if ($action == 'history') {
@@ -719,8 +722,10 @@ if ($action == 'set') {
         $raise = isset($targets['raise']) ? $targets['raise'][$dir]['kbit'] : 0;
         $down = $current > 0 ? ($current - $lower) * 100 / $current : 100;
         $up = $current > 0 ? ($raise - $current) * 100 / $current : 0;
-        // whole days since the pipe was lowered (an hour early still counts, the update runs daily)
-        $since = isset($state[$dir]) ? intdiv(time() - (int)$state[$dir] + 3600, 86400) : PHP_INT_MAX;
+        // dates since the pipe was lowered (local time), so the hold covers the next daily update
+        // whether the pipe was lowered by that update or by Apply now later in the day
+        $since = isset($state[$dir]) ?
+            (int)round((strtotime('today') - strtotime('today', (int)$state[$dir])) / 86400) : PHP_INT_MAX;
         $target = null;
         $why = null;
         if ($current <= 0 || ($lower < $current && $down >= $minchange)) {
@@ -728,11 +733,11 @@ if ($action == 'set') {
             $why = 'lowered';
             $state[$dir] = time();
         } elseif ($raise > $current && $up >= $minchange * RAISE_FROM) {
-            if ($since < RAISE_HOLD && $minchange > 0) {
+            if ($since < RAISE_HOLD && $minchange > 0 && !$applynow) {
                 $why = sprintf('raise to %.2f held, %d day(s) after it was lowered', $raise / 1000, $since);
             } else {
                 $target = $targets['raise'][$dir];
-                $why = 'raised';
+                $why = $since < RAISE_HOLD && $minchange > 0 ? 'raised, hold skipped by Apply now' : 'raised';
             }
         }
         if ($target === null && (string)$pipe->bandwidthMetric != pipe_target($current)['metric']) {

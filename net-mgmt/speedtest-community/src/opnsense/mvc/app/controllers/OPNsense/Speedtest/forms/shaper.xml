@@ -39,6 +39,6 @@
         <id>speedtest.shaper.minchange</id>
         <label>Minimum change (%)</label>
         <type>text</type>
-        <help>A pipe is lowered at once when its figure is at least this percentage below it. It is raised at once to its figure when that is at least a quarter of this above it, but not the day after it was lowered</help>
+        <help>A pipe is lowered at once when its figure is at least this percentage below it. It is raised at once to its figure when that is at least a quarter of this above it, but not by the daily update on the date after it was lowered (Apply now is not held)</help>
     </field>
 </form>

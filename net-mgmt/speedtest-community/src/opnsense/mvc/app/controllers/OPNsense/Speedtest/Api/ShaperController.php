@@ -200,14 +200,14 @@ class ShaperController extends ApiMutableModelControllerBase
     }
 
     /**
-     * set the shaper pipes from the best speedtest results
+     * set the shaper pipes from the best speedtest results now (a raise is not held)
      */
     public function applyAction()
     {
         if (!$this->request->isPost()) {
             return ['status' => 'error', 'message' => gettext('Use POST')];
         }
-        return json_decode((new Backend())->configdRun("speedtest setshaper"), true) ??
+        return json_decode((new Backend())->configdRun("speedtest setshaper now"), true) ??
             ['status' => 'error', 'message' => gettext('No response from configd')];
     }
 
