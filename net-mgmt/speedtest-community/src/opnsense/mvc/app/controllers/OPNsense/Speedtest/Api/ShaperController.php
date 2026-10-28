@@ -212,6 +212,33 @@ class ShaperController extends ApiMutableModelControllerBase
     }
 
     /**
+     * updates of the pipes, newest first
+     */
+    public function historyAction()
+    {
+        return json_decode((new Backend())->configdRun("speedtest shaperhistory"), true) ?? [];
+    }
+
+    /**
+     * the updates of the pipes as csv
+     */
+    public function exportAction()
+    {
+        $this->response->setContentType('text/csv', 'UTF-8');
+        $this->response->setHeader('Content-Disposition', 'attachment; filename="shaper.csv"');
+        return (new Backend())->configdRun("speedtest shaperhistory csv");
+    }
+
+    public function clearhistoryAction()
+    {
+        if (!$this->request->isPost()) {
+            return ['status' => 'error', 'message' => gettext('Use POST')];
+        }
+        return json_decode((new Backend())->configdRun("speedtest clearshaperhistory"), true) ??
+            ['status' => 'error', 'message' => gettext('No response from configd')];
+    }
+
+    /**
      * create pipes, queues and rules on the interface when none are found
      */
     public function createAction()

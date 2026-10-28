@@ -62,6 +62,13 @@ const CSV_FILE = '/usr/local/opnsense/scripts/OPNsense/speedtest/speedtest.csv';
 // when a pipe was last lowered, per direction
 const STATE_FILE = '/usr/local/opnsense/scripts/OPNsense/speedtest/shaper.json';
 const LOCK_FILE = '/tmp/speedtest_shaper.lock';
+// every update of the pipes (set), the last HISTORY_ROWS of them; filled from syslog when it is missing
+const HISTORY_FILE = '/usr/local/opnsense/scripts/OPNsense/speedtest/shaper.csv';
+const HISTORY_ROWS = 365;
+const HISTORY_HEADER = ['time (UTC)', 'status', 'download before (Mbit/s)', 'download after (Mbit/s)', 'download',
+    'upload before (Mbit/s)', 'upload after (Mbit/s)', 'upload', 'best download (Mbit/s)', 'best upload (Mbit/s)',
+    'raise download (Mbit/s)', 'raise upload (Mbit/s)', 'basis', 'message'];
+const SYSLOG_FILES = '/var/log/system/system_*.log';
 // CoDel default target (ms)
 const CODEL_TARGET_MS = 5;
 // pipes are written in whole Mbit/s from this bandwidth (Kbit/s) up, in Kbit/s below it
@@ -114,8 +121,141 @@ function finish($result)
     // reopen: saving the config switches the syslog identity
     openlog('speedtest', LOG_ODELAY, LOG_USER);
     syslog($result['status'] == 'error' ? LOG_ERR : LOG_NOTICE, 'shaper: ' . $msg);
+    if (($GLOBALS['action'] ?? '') == 'set' && $result['status'] != 'disabled') {
+        history_add($result);
+    }
     echo json_encode($result) . PHP_EOL;
     exit(0);
+}
+
+/**
+ * the history rows, oldest first (backfilled from syslog when there is no history file yet)
+ */
+function history_rows()
+{
+    if (!file_exists(HISTORY_FILE)) {
+        history_write(history_from_syslog());
+    }
+    $rows = [];
+    if (($fh = @fopen(HISTORY_FILE, 'r')) !== false) {
+        fgetcsv($fh, 0, ',', '"', '\\'); // header
+        while (($row = fgetcsv($fh, 0, ',', '"', '\\')) !== false) {
+            if (count($row) == count(HISTORY_HEADER)) {
+                $rows[] = array_combine(HISTORY_HEADER, $row);
+            }
+        }
+        fclose($fh);
+    }
+    return $rows;
+}
+
+function history_write($rows)
+{
+    $tmp = HISTORY_FILE . '.tmp';
+    if (($fh = @fopen($tmp, 'w')) === false) {
+        return;
+    }
+    fputcsv($fh, HISTORY_HEADER, ',', '"', '\\');
+    foreach (array_slice($rows, -HISTORY_ROWS) as $row) {
+        fputcsv($fh, array_map(function ($column) use ($row) {
+            return $row[$column] ?? '';
+        }, HISTORY_HEADER), ',', '"', '\\');
+    }
+    fclose($fh);
+    rename($tmp, HISTORY_FILE);
+}
+
+/**
+ * add the result of a set run to the history
+ */
+function history_add($result)
+{
+    $mbit = function ($value) {
+        return $value === null ? '' : sprintf('%.3f', $value);
+    };
+    $row = ['time (UTC)' => gmdate('Y-m-d H:i:s'), 'status' => $result['status'], 'basis' => $result['basis'] ?? '',
+        'message' => $result['status'] == 'error' ? $result['message'] : ''];
+    foreach (DIRECTIONS as $dir => $props) {
+        $row["$dir before (Mbit/s)"] = $mbit($result[$dir]['current_mbit'] ?? null);
+        $row["$dir after (Mbit/s)"] = $mbit($result[$dir]['after_mbit'] ?? null);
+        $row[$dir] = $result[$dir]['note'] ?? '';
+        $row["best $dir (Mbit/s)"] = $mbit($result[$dir]['best_mbit'] ?? null);
+        $row["raise $dir (Mbit/s)"] = $mbit($result[$dir]['raise_best_mbit'] ?? null);
+    }
+    $rows = history_rows();
+    $rows[] = $row;
+    history_write($rows);
+}
+
+/**
+ * the set runs still in the system log (all versions of its message), oldest first
+ */
+function history_from_syslog()
+{
+    $rows = [];
+    foreach (glob(SYSLOG_FILES) ?: [] as $file) {
+        if (($fh = @fopen($file, 'r')) === false) {
+            continue;
+        }
+        while (($line = fgets($fh)) !== false) {
+            if (strpos($line, ' speedtest ') === false || strpos($line, '] shaper: ') === false ||
+                !preg_match('/^<\d+>1 (\S+) .*?\] shaper: (.*)$/', rtrim($line), $m)) {
+                continue;
+            }
+            $row = history_parse($m[2]);
+            if ($row !== null && ($time = strtotime($m[1])) !== false) {
+                $row['time (UTC)'] = gmdate('Y-m-d H:i:s', $time);
+                $rows[$row['time (UTC)'] . $m[2]] = $row;
+            }
+        }
+        fclose($fh);
+    }
+    ksort($rows);
+    return array_values($rows);
+}
+
+/**
+ * a history row from a shaper message of the system log, null when it is not about setting the pipes
+ */
+function history_parse($msg)
+{
+    if (preg_match('/^(no speedtest results|no (download|upload) pipe found|more than one (download|upload) pipe)/', $msg)) {
+        return ['status' => 'error', 'message' => $msg];
+    }
+    if (!preg_match('/^download \S+: (.*?); upload \S+: (.*)$/', $msg, $m)) {
+        return null;
+    }
+    // the basis is the last parenthesized part of the message
+    $upload = $m[2];
+    $basis = '';
+    if (substr($upload, -1) == ')') {
+        for ($i = strlen($upload) - 1, $depth = 0; $i >= 0; $i--) {
+            $depth += $upload[$i] == ')' ? 1 : ($upload[$i] == '(' ? -1 : 0);
+            if ($depth == 0) {
+                break;
+            }
+        }
+        $basis = substr($upload, $i + 1, -1);
+        $upload = rtrim(substr($upload, 0, $i));
+    }
+    $row = ['status' => 'unchanged', 'basis' => $basis, 'message' => ''];
+    foreach (['download' => $m[1], 'upload' => $upload] as $dir => $text) {
+        if (!preg_match('/^([\d.]+)(?: to ([\d.]+))? (Mbit|Kbit)\/s,? ?(.*)$/', $text, $d)) {
+            return null;
+        }
+        $scale = $d[3] == 'Kbit' ? 0.001 : 1;
+        $row["$dir before (Mbit/s)"] = sprintf('%.3f', $d[1] * $scale);
+        $row["$dir after (Mbit/s)"] = sprintf('%.3f', ($d[2] !== '' ? $d[2] : $d[1]) * $scale);
+        $note = $d[4];
+        if ($d[2] !== '') {
+            $row['status'] = 'updated';
+            // "(raised), CoDel target 27 ms" -> "raised, CoDel target 27 ms"; older versions: "changed"
+            $note = preg_replace('/^\(([^()]*)\)/', '$1', $note);
+            $note = $note === '' || strpos($note, 'CoDel') === 0 ? trim('changed, ' . $note, ', ') : $note;
+        }
+        $row[$dir] = $note;
+    }
+    return $row;
 }
 
 /**
@@ -150,7 +290,9 @@ function speedtest_days($days)
             if (isset($row[CSV_UPLOAD]) && is_numeric($row[CSV_TIMESTAMP]) && $row[CSV_TIMESTAMP] >= $since &&
                 is_numeric($row[CSV_DOWNLOAD]) && is_numeric($row[CSV_UPLOAD]) &&
                 $row[CSV_DOWNLOAD] > 0 && $row[CSV_UPLOAD] > 0) {
-                $hours[intdiv((int)$row[CSV_TIMESTAMP], 3600)][] = $row;
+                // day 0 the last 24 hours; a result at the very start of the window counts for the oldest day
+                $day = min($days - 1, intdiv(max(0, $now - (int)$row[CSV_TIMESTAMP]), 86400));
+                $hours[$day][intdiv((int)$row[CSV_TIMESTAMP], 3600)][] = $row;
                 $probes++;
             }
         }
@@ -159,20 +301,17 @@ function speedtest_days($days)
     if ($probes == 0) {
         return null;
     }
-    $result = ['days' => $days, 'hours' => count($hours), 'probes' => $probes];
+    ksort($hours);
+    $result = ['days' => $days, 'hours' => array_sum(array_map('count', $hours)), 'probes' => $probes,
+        'dayscount' => count($hours)];
     foreach (DIRECTIONS as $dir => $props) {
-        // day => best of each hour
-        $daily = [];
-        foreach ($hours as $hour => $rows) {
-            $daily[intdiv(max(0, $now - $hour * 3600 - 1), 86400)][] =
-                max(without_outliers(array_map('floatval', array_column($rows, $props['column']))));
-        }
-        ksort($daily);
-        $result[$dir] = array_map(function ($best) {
-            return max(without_outliers($best));
-        }, $daily);
+        // day => best hour of the best result of each hour
+        $result[$dir] = array_map(function ($day) use ($props) {
+            return max(without_outliers(array_map(function ($rows) use ($props) {
+                return max(without_outliers(array_map('floatval', array_column($rows, $props['column']))));
+            }, $day)));
+        }, $hours);
     }
-    $result['dayscount'] = count($daily);
     return $result;
 }
 
@@ -442,8 +581,24 @@ function mss_status($interface)
 }
 
 $action = $argv[1] ?? '';
-if (!in_array($action, ['set', 'create', 'rules', 'sync', 'mss', 'setmss'])) {
-    echo json_encode(['status' => 'error', 'message' => 'usage: shaper.php set|create|sync|mss|setmss']) . PHP_EOL;
+if (!in_array($action, ['set', 'create', 'rules', 'sync', 'mss', 'setmss', 'history', 'clearhistory'])) {
+    echo json_encode(['status' => 'error', 'message' =>
+        'usage: shaper.php set|create|sync|mss|setmss|history [csv]|clearhistory']) . PHP_EOL;
+    exit(0);
+}
+if ($action == 'history') {
+    $rows = history_rows();
+    if (($argv[2] ?? '') == 'csv') {
+        readfile(HISTORY_FILE);
+    } else {
+        echo json_encode(array_reverse($rows)) . PHP_EOL;
+    }
+    exit(0);
+}
+if ($action == 'clearhistory') {
+    // an empty history (not a missing one, that would be filled from syslog again)
+    history_write([]);
+    echo json_encode(['status' => 'ok']) . PHP_EOL;
     exit(0);
 }
 
@@ -516,7 +671,8 @@ foreach ($figure as $use => $figures) {
 }
 foreach (DIRECTIONS as $dir => $props) {
     $result[$dir] = ['estimate_mbit' => round($figure['lower'][$dir], 2), 'target_mbit' => $targets['lower'][$dir]['kbit'] / 1000,
-        'raise_mbit' => isset($targets['raise']) ? $targets['raise'][$dir]['kbit'] / 1000 : null];
+        'raise_mbit' => isset($targets['raise']) ? $targets['raise'][$dir]['kbit'] / 1000 : null,
+        'best_mbit' => $figure['lower'][$dir], 'raise_best_mbit' => $figure['raise'][$dir] ?? null];
 }
 $days_of = function ($figures) {
     return sprintf('%d of the last %d day(s), %d hours, %d results', $figures['dayscount'], $figures['days'],
@@ -530,6 +686,8 @@ $basis = sprintf(
     $thresholds['upload'],
     $link['dsl'] != '' ? sprintf(', %s%s MTU %d', strtoupper($link['dsl']), $link['pppoe'] ? ' PPPoE' : '', $link['mtu']) : ''
 );
+
+$result['basis'] = substr($basis, 2, -1);
 
 $shaper = new TrafficShaper();
 $found = discover_pipes($shaper, $interface);
@@ -587,12 +745,16 @@ if ($action == 'set') {
             $pipe->bandwidth = (string)$target['bandwidth'];
             $pipe->bandwidthMetric = $target['metric'];
             $result[$dir]['action'] = 'updated';
-            $msgs[] = sprintf('%s %s: %.2f to %.2f Mbit/s (%s)', $dir, $pipe->description, $current / 1000, $target['kbit'] / 1000, $why) .
-                codel_target($pipe, $target['kbit'], $link);
+            $result[$dir]['after_mbit'] = $target['kbit'] / 1000;
+            $codel = codel_target($pipe, $target['kbit'], $link);
+            $result[$dir]['note'] = $why . $codel;
+            $msgs[] = sprintf('%s %s: %.2f to %.2f Mbit/s (%s)', $dir, $pipe->description, $current / 1000,
+                $target['kbit'] / 1000, $why) . $codel;
             $changed = true;
         } else {
             $result[$dir]['action'] = 'unchanged';
-            $msgs[] = sprintf('%s %s: %.2f Mbit/s kept (%s)', $dir, $pipe->description, $current / 1000, $why ?? sprintf(
+            $result[$dir]['after_mbit'] = $current / 1000;
+            $result[$dir]['note'] = sprintf('kept (%s)', $why ?? sprintf(
                 'lower %.2f, raise %s: change -%.1f%%/+%.1f%%, minimum -%s%%/+%s%%',
                 $lower / 1000,
                 isset($targets['raise']) ? sprintf('%.2f', $raise / 1000) : sprintf('none (%d days of results needed)', RAISE_DAYS),
@@ -601,6 +763,7 @@ if ($action == 'set') {
                 $minchange,
                 $minchange * RAISE_FROM
             ));
+            $msgs[] = sprintf('%s %s: %.2f Mbit/s %s', $dir, $pipe->description, $current / 1000, $result[$dir]['note']);
         }
     }
     $result['message'] = implode('; ', $msgs) . $basis;

@@ -196,6 +196,30 @@
         </div>
         <div class="clearfix"></div>
         </div>
+        <div class="col-md-12">
+            <hr/>
+            <a href="#" class="log-toggle" data-rows="speedtest-log"><i class="fa fa-toggle-off text-danger"></i></a>
+            <small>{{ lang._('show log') }}</small>
+            <span class="speedtest-log" style="display: none; margin-left: 2em;">
+                <a href="/api/speedtest/download/csv" class="btn btn-sm btn-primary"><b>{{ lang._('Export log') }}</b></a>
+                <button class="btn btn-sm btn-primary" id="deletelogAct" type="button">
+                    <b>{{ lang._('Clear log') }}</b> <i id="deletelogAct_progress"></i></button>
+            </span>
+            <table class="table table-condensed speedtest-log" style="display: none; margin-top: 1ex;">
+                <thead>
+                    <tr>
+                        <th class="text-left">{{ lang._('Timestamp (GMT)') }}</th>
+                        <th class="text-left">{{ lang._('Server id') }}</th>
+                        <th class="text-left">{{ lang._('Server name') }}</th>
+                        <th class="text-left">{{ lang._('Download') }}</th>
+                        <th class="text-left">{{ lang._('Upload') }}</th>
+                        <th class="text-left">{{ lang._('Latency') }}</th>
+                    </tr>
+                </thead>
+                <tbody id="log_block"></tbody>
+            </table>
+        </div>
+        <div class="clearfix"></div>
     </div>
 </div>
 
@@ -216,44 +240,32 @@
         <div id="shaper_result"></div>
         <br/>
     </div>
-</div>
-
-<div class="content-box" id="logs">
-    <table id="grid-log" class="table table-condensed">
-        <thead>
-            <tr>
-                <th style="text-align:left">
-                    <a href="#" id="toggle_log"><i class="fa fa-toggle-off text-danger"></i></a>
-                    <small id="togglelog">show log</small>
-                </th>
-            </tr>
-            <tr><th>
-                <div id="exportlog_button" class="speedtest-log" style="display: none;">
-                    <a href="/api/speedtest/download/csv">
-                        <button class="btn btn-sm btn-primary" id="downloadAct" type="button">
-                            <b>Export log</b>
-                        </button>
-                    </a>
-                </div>
-            </th>
-            <th>
-                <div id="clearlog_button" class="speedtest-log" style="display: none;">
-                    <button class="btn  btn-sm btn-primary" id="deletelogAct" type="button">
-                        <b>{{ lang._('Clear log') }}</b> <i id="deletelogAct_progress"></i></button>
-                </div>
-            </th></tr>
-            <tr id="log_head" class="speedtest-log" style="display: none;">
-                <th data-column-id="Timestamp" class="text-left" style="width:7em;">Timestamp (GMT)</th>
-                <th data-column-id="ServerId" class="text-left" style="width:3em;">Server id</th>
-                <th data-column-id="ServerName" class="text-left" style="width:12em;">Server name</th>
-                <th data-column-id="Latency" class="text-left" style="width:2em;">Download</th>
-                <th data-column-id="DlSpeed" class="text-left" style="width:3em;">Upload</th>
-                <th data-column-id="UlSpeed" class="text-left" style="width:3em;">Latency</th>
-            </tr>
-        </thead>
-        <tbody id="log_block" class="speedtest-log" style="display: none;">
-        </tbody>
-    </table>
+    <div class="col-md-12">
+        <hr/>
+        <a href="#" class="log-toggle" data-rows="shaper-log"><i class="fa fa-toggle-off text-danger"></i></a>
+        <small>{{ lang._('show changes') }}</small>
+        <span class="shaper-log" style="display: none; margin-left: 2em;">
+            <a href="/api/speedtest/shaper/export" class="btn btn-sm btn-primary"><b>{{ lang._('Export') }}</b></a>
+            <button class="btn btn-sm btn-primary" id="clearhistoryAct" type="button">
+                <b>{{ lang._('Clear') }}</b> <i id="clearhistoryAct_progress"></i></button>
+        </span>
+        <table class="table table-condensed shaper-log" style="display: none; margin-top: 1ex;">
+            <thead>
+                <tr>
+                    <th class="text-left" style="width: 10em;">{{ lang._('Time (UTC)') }}</th>
+                    <th class="text-left">{{ lang._('Download (Mbit/s)') }}</th>
+                    <th class="text-left">{{ lang._('Upload (Mbit/s)') }}</th>
+                    <th class="text-left" style="width: 11em;">{{ lang._('Best down / up') }}</th>
+                    <th class="text-left">{{ lang._('Based on') }}</th>
+                </tr>
+            </thead>
+            <tbody id="history_block"></tbody>
+        </table>
+        <div class="speedtest-help hidden">
+            <small>{{ lang._('Each update of the pipes (the daily task and Apply now): the pipe before and after, why, the best results it was set from (lowering, and raising in brackets) and the results they are based on. Runs before this list was kept are taken from the system log, without the best results.') }}</small>
+        </div>
+    </div>
+    <div class="clearfix"></div>
 </div>
 
 <script>
@@ -278,6 +290,42 @@
                     "<td class=\"text-left\" style=\"\">" + parseFloat(l[i][7]).toFixed(2) + "</td></tr>"
             }
             $('#log_block').html(obj);
+        });
+    };
+    // updates of the pipes, newest first; errors span the row
+    function history_reload() {
+        ajaxCall("/api/speedtest/shaper/history", {}, function(rows, status) {
+            var body = $('#history_block').empty();
+            var td = function(text) { return $('<td class="text-left"/>').text(text); };
+            var pipe = function(r, dir) {
+                var before = r[dir + ' before (Mbit/s)'], after = r[dir + ' after (Mbit/s)'];
+                if (before === '') {
+                    return td('');
+                }
+                // Kbit/s pipes (below 20 Mbit/s) to the Kbit, whole Mbit/s above
+                var fmt = function(v) {
+                    return parseFloat(v) < 20 ? parseFloat(v).toFixed(3).replace(/\.?0+$/, '') : parseFloat(v).toFixed(0);
+                };
+                var cell = $('<td class="text-left"/>').append(before === after ? $('<b/>').text(fmt(after)) :
+                    $('<b/>').text(fmt(before) + ' \u2192 ' + fmt(after)));
+                return cell.append($('<br/>')).append($('<small/>').text(r[dir]));
+            };
+            var best = function(r, use) {
+                return r[use + ' download (Mbit/s)'] === '' ? '' : parseFloat(r[use + ' download (Mbit/s)']).toFixed(2) +
+                    ' / ' + parseFloat(r[use + ' upload (Mbit/s)']).toFixed(2);
+            };
+            $.each(Array.isArray(rows) ? rows : [], function(i, r) {
+                var tr = $('<tr/>').append(td(r['time (UTC)'].substr(0, 16)));
+                if (r.status === 'error') {
+                    tr.append($('<td colspan="4" class="text-left text-danger"/>').text(r.message));
+                } else {
+                    var raise = best(r, 'raise');
+                    tr.append(pipe(r, 'download'), pipe(r, 'upload'),
+                        td(best(r, 'best') + (raise !== '' ? ' (' + raise + ')' : '')),
+                        $('<td class="text-left"/>').append($('<small/>').text(r.basis)));
+                }
+                body.append(tr);
+            });
         });
     };
     // the server id field holds "id" or "(id) server name"; returns the id, '' when empty, null when invalid
@@ -459,6 +507,7 @@
             ajaxCall(url, {}, function(r, status) {
                 $("#" + btn + "_progress").removeClass("fa fa-spinner fa-pulse");
                 shaper_result(r);
+                history_reload();
             });
         }, true, function() {
             $("#" + btn + "_progress").removeClass("fa fa-spinner fa-pulse");
@@ -512,12 +561,16 @@
         $("#toggle_help_page").click(function() {
             page_help(!$(this).hasClass("fa-toggle-on"), true);
         });
-        // show/hide the log; core's advanced mode toggle only handles elements inside a form
-        $("#toggle_log").click(function(e) {
+        // show/hide the speedtest log and the pipe changes; core's advanced mode toggle only handles
+        // elements inside a form
+        $(".log-toggle").click(function(e) {
             e.preventDefault();
             var icon = $(this).find('i');
             icon.toggleClass("fa-toggle-on fa-toggle-off").toggleClass("text-success text-danger");
-            $('.speedtest-log').toggle(icon.hasClass("fa-toggle-on"));
+            $('.' + $(this).data('rows')).toggle(icon.hasClass("fa-toggle-on"));
+            if ($(this).data('rows') === 'shaper-log' && icon.hasClass("fa-toggle-on")) {
+                history_reload();
+            }
         });
         $("#moduleInstallAct").click(function() {
             stdDialogConfirm(
@@ -623,6 +676,18 @@
             });
             $('#log_block').html("");
             log_reload();
+        });
+        $("#clearhistoryAct").click(function() {
+            stdDialogConfirm(
+                "{{ lang._('Clear') }}",
+                "{{ lang._('Clear the list of pipe changes? It is not filled from the system log again.') }}",
+                "{{ lang._('Yes') }}", "{{ lang._('Cancel') }}", function() {
+                    $("#clearhistoryAct_progress").addClass("fa fa-spinner fa-pulse");
+                    ajaxCall("/api/speedtest/shaper/clearhistory", {}, function(r, status) {
+                        $("#clearhistoryAct_progress").removeClass("fa fa-spinner fa-pulse");
+                        history_reload();
+                    });
+                });
         });
     });
 
