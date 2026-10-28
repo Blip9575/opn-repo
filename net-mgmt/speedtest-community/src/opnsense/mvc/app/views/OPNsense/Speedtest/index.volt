@@ -325,12 +325,11 @@
                 var fmt = function(v) {
                     return parseFloat(v) < 20 ? parseFloat(v).toFixed(3).replace(/\.?0+$/, '') : parseFloat(v).toFixed(0);
                 };
-                // "kept (lower ...)", "raised, CoDel target 23 ms": the action, then the rest in brackets
+                // "kept (lower ...)", "raised, CoDel target 23 ms": the speed shows the action, the rest in brackets
                 var note = r[dir].match(/^(\w+),? ?(.*)$/) || ['', r[dir], ''];
                 var rest = note[2] === '' || /^\(.*\)$/.test(note[2]) ? note[2] : '(' + note[2] + ')';
                 var cell = $('<td class="text-center"/>').append(
-                    $('<b/>').text((before === after ? fmt(after) : fmt(before) + ' \u2192 ' + fmt(after)) + ' Mbit/s'),
-                    $('<br/>'), $('<b/>').text(note[1]));
+                    $('<b/>').text((before === after ? fmt(after) : fmt(before) + ' \u2192 ' + fmt(after)) + ' Mbit/s'));
                 return rest === '' ? cell : cell.append($('<br/>'), $('<small/>').text(rest));
             };
             // runs taken from the system log have no best results
