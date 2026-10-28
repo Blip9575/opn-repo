@@ -297,17 +297,18 @@
         });
     };
     // the rows of "Run speedtest" and of the schedule form below it alternate like one striped
-    // table (as the Traffic shaper form does): hidden rows still count for the theme's stripes, so
-    // hidden padding rows set each visible row's place; the schedule form starts with a striped
-    // (odd) row, so the last visible row here takes an even place
+    // table, starting with the striped colour as the Traffic shaper form does: hidden rows still
+    // count for the theme's stripes, so hidden padding rows put each visible row in its place
     function speedtest_stripes() {
-        var tbody = $('#run_speedtest_table > tbody');
-        tbody.children('tr.stripe-pad').remove();
-        var rows = tbody.children('tr').filter(function() { return this.style.display !== 'none'; });
-        rows.each(function(i) {
-            if (($(this).index() + 1) % 2 !== (rows.length - 1 - i) % 2) {
-                $('<tr class="stripe-pad" style="display: none;"></tr>').insertBefore(this);
-            }
+        var n = 0;
+        $('#run_speedtest_table > tbody, #frm_schedule table > tbody').each(function() {
+            $(this).children('tr.stripe-pad').remove();
+            $(this).children('tr').filter(function() { return this.style.display !== 'none'; }).each(function() {
+                if (($(this).index() + 1) % 2 !== (n + 1) % 2) {
+                    $('<tr class="stripe-pad" style="display: none;"></tr>').insertBefore(this);
+                }
+                n++;
+            });
         });
     };
     // updates of the pipes, newest first; errors span the row
