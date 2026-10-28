@@ -439,7 +439,8 @@ function pipe_target($kbit)
  * full-size packet (as sent on the link) takes longer than the default target (5 ms), so the target
  * becomes that time and the interval grows by as much (as sqm-scripts does), so CoDel does not drop
  * before a few packets could be sent; both go back to the default once the pipe is fast enough. A
- * lower target is left alone, and so is an interval that is not the default or the one set here.
+ * lower target is left alone, and so is an interval that is not the default (empty or written out) or the
+ * one set here.
  * @return string addition to the message, empty when nothing changed
  */
 function codel_target($pipe, $kbit, $link)
@@ -461,7 +462,12 @@ function codel_target($pipe, $kbit, $link)
     } elseif ($current !== '' && (int)$current > CODEL_TARGET_MS) {
         $new = '';
     }
-    $new_interval = $interval === '' || $interval === $interval_for($current) ? $interval_for($new) : $interval;
+    $default = $interval === '' || $interval === (string)CODEL_INTERVAL_MS;
+    $new_interval = $default || $interval === $interval_for($current) ? $interval_for($new) : $interval;
+    if ($new_interval === '' && $default) {
+        // the default written out stays as it is
+        $new_interval = $interval;
+    }
     if ($new === $current && $new_interval === $interval) {
         return '';
     }
