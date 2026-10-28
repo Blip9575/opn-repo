@@ -330,7 +330,7 @@
                 var rest = note[2] === '' || /^\(.*\)$/.test(note[2]) ? note[2] : '(' + note[2] + ')';
                 var cell = $('<td class="text-center"/>').append(
                     $('<b/>').text((before === after ? fmt(after) : fmt(before) + ' \u2192 ' + fmt(after)) + ' Mbit/s'),
-                    $('<br/>'), $('<small/>').text(note[1]));
+                    $('<br/>'), $('<b/>').text(note[1]));
                 return rest === '' ? cell : cell.append($('<br/>'), $('<small/>').text(rest));
             };
             // runs taken from the system log have no best results
@@ -346,7 +346,7 @@
                     var raise = best(r, 'raise');
                     tr.append(pipe(r, 'download'), pipe(r, 'upload'),
                         td(best(r, 'best') === '' ? '\u2013' : best(r, 'best') + (raise !== '' ? ' (' + raise + ')' : '')),
-                        $('<td class="text-left"/>').append($('<small/>').text(r.basis)));
+                        $('<td class="text-left"/>').text(r.basis));
                 }
                 body.append(tr);
             });
