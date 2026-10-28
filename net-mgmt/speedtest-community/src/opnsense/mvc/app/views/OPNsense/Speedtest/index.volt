@@ -214,12 +214,12 @@
             <table class="table table-condensed speedtest-log" style="display: none;">
                 <thead>
                     <tr>
-                        <th class="text-left">{{ lang._('Timestamp (GMT)') }}</th>
-                        <th class="text-left">{{ lang._('Server id') }}</th>
-                        <th class="text-left">{{ lang._('Server name') }}</th>
-                        <th class="text-left">{{ lang._('Download') }}</th>
-                        <th class="text-left">{{ lang._('Upload') }}</th>
-                        <th class="text-left">{{ lang._('Latency') }}</th>
+                        <th class="text-center">{{ lang._('Timestamp (GMT)') }}</th>
+                        <th class="text-center">{{ lang._('Server id') }}</th>
+                        <th class="text-center">{{ lang._('Server name') }}</th>
+                        <th class="text-center">{{ lang._('Download') }}</th>
+                        <th class="text-center">{{ lang._('Upload') }}</th>
+                        <th class="text-center">{{ lang._('Latency') }}</th>
                     </tr>
                 </thead>
                 <tbody id="log_block"></tbody>
@@ -256,11 +256,11 @@
         <table class="table table-condensed shaper-log" style="display: none;">
             <thead>
                 <tr>
-                    <th class="text-left">{{ lang._('Timestamp (GMT)') }}</th>
-                    <th class="text-left">{{ lang._('Download') }}</th>
-                    <th class="text-left">{{ lang._('Upload') }}</th>
-                    <th class="text-left">{{ lang._('Best down / up') }}</th>
-                    <th class="text-left">{{ lang._('Based on') }}</th>
+                    <th class="text-center">{{ lang._('Timestamp (GMT)') }}</th>
+                    <th class="text-center">{{ lang._('Download') }}</th>
+                    <th class="text-center">{{ lang._('Upload') }}</th>
+                    <th class="text-center">{{ lang._('Best down / up') }}</th>
+                    <th class="text-center">{{ lang._('Based on') }}</th>
                 </tr>
             </thead>
             <tbody id="history_block"></tbody>
@@ -286,12 +286,12 @@
             var obj = '';
             for (var i = 0; i < l.length; i++) {
                 obj +=
-                    "<tr><td class=\"text-left\" style=\"\">" + l[i][0] + "</td>" +
-                    "<td class=\"text-left\" style=\"\">" + l[i][2] + "</td>" +
-                    "<td class=\"text-left\" style=\"\">" + l[i][3] + "</td>" +
-                    "<td class=\"text-left\" style=\"\">" + parseFloat(l[i][5]).toFixed(2) + "</td>" +
-                    "<td class=\"text-left\" style=\"\">" + parseFloat(l[i][6]).toFixed(2) + "</td>" +
-                    "<td class=\"text-left\" style=\"\">" + parseFloat(l[i][7]).toFixed(2) + "</td></tr>"
+                    "<tr><td class=\"text-center\" style=\"\">" + l[i][0] + "</td>" +
+                    "<td class=\"text-center\" style=\"\">" + l[i][2] + "</td>" +
+                    "<td class=\"text-center\" style=\"\">" + l[i][3] + "</td>" +
+                    "<td class=\"text-center\" style=\"\">" + parseFloat(l[i][5]).toFixed(2) + "</td>" +
+                    "<td class=\"text-center\" style=\"\">" + parseFloat(l[i][6]).toFixed(2) + "</td>" +
+                    "<td class=\"text-center\" style=\"\">" + parseFloat(l[i][7]).toFixed(2) + "</td></tr>"
             }
             $('#log_block').html(obj);
         });
@@ -315,7 +315,7 @@
     function history_reload() {
         ajaxCall("/api/speedtest/shaper/history", {}, function(rows, status) {
             var body = $('#history_block').empty();
-            var td = function(text) { return $('<td class="text-left"/>').text(text); };
+            var td = function(text) { return $('<td class="text-center"/>').text(text); };
             var pipe = function(r, dir) {
                 var before = r[dir + ' before (Mbit/s)'], after = r[dir + ' after (Mbit/s)'];
                 if (before === '') {
@@ -325,7 +325,7 @@
                 var fmt = function(v) {
                     return parseFloat(v) < 20 ? parseFloat(v).toFixed(3).replace(/\.?0+$/, '') : parseFloat(v).toFixed(0);
                 };
-                return $('<td class="text-left"/>').append(
+                return $('<td class="text-center"/>').append(
                     $('<b/>').text((before === after ? fmt(after) : fmt(before) + ' \u2192 ' + fmt(after)) + ' Mbit/s'),
                     $('<br/>'), $('<small/>').text(r[dir]));
             };
@@ -337,12 +337,12 @@
             $.each(Array.isArray(rows) ? rows : [], function(i, r) {
                 var tr = $('<tr/>').append(td(r['time (UTC)'].replace(' ', 'T')));
                 if (r.status === 'error') {
-                    tr.append($('<td colspan="4" class="text-left text-danger"/>').text(r.message));
+                    tr.append($('<td colspan="4" class="text-center text-danger"/>').text(r.message));
                 } else {
                     var raise = best(r, 'raise');
                     tr.append(pipe(r, 'download'), pipe(r, 'upload'),
                         td(best(r, 'best') === '' ? '\u2013' : best(r, 'best') + (raise !== '' ? ' (' + raise + ')' : '')),
-                        td(r.basis));
+                        $('<td class="text-left"/>').text(r.basis));
                 }
                 body.append(tr);
             });
