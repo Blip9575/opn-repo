@@ -25,6 +25,8 @@
     .content-box table > tbody > tr > td, .content-box table > thead > tr > th { vertical-align: middle; }
     .log-switch { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5em; padding: 1ex 0; }
     .log-switch .btn { margin-left: 0.5em; }
+    /* timestamps of the speedtest log and the pipe changes on one line */
+    table.speedtest-log tr > :first-child, table.shaper-log tr > :first-child { white-space: nowrap; }
 </style>
 {# heading above its box like "Run speedtest" and "Traffic shaper", the page's help switch on the same line #}
 <div style="display: flex; justify-content: space-between; align-items: baseline;">
@@ -308,9 +310,11 @@
                 var fmt = function(v) {
                     return parseFloat(v) < 20 ? parseFloat(v).toFixed(3).replace(/\.?0+$/, '') : parseFloat(v).toFixed(0);
                 };
-                return $('<td class="text-left"/>').text((before === after ? fmt(after) : fmt(before) + ' \u2192 ' + fmt(after)) + ' Mbit/s')
-                    .append($('<br/>'), document.createTextNode(r[dir]));
+                return $('<td class="text-left"/>').append(
+                    $('<b/>').text((before === after ? fmt(after) : fmt(before) + ' \u2192 ' + fmt(after)) + ' Mbit/s'),
+                    $('<br/>'), $('<small/>').text(r[dir]));
             };
+            // runs taken from the system log have no best results
             var best = function(r, use) {
                 return r[use + ' download (Mbit/s)'] === '' ? '' : parseFloat(r[use + ' download (Mbit/s)']).toFixed(2) +
                     ' / ' + parseFloat(r[use + ' upload (Mbit/s)']).toFixed(2);
@@ -322,7 +326,7 @@
                 } else {
                     var raise = best(r, 'raise');
                     tr.append(pipe(r, 'download'), pipe(r, 'upload'),
-                        td(best(r, 'best') + (raise !== '' ? ' (' + raise + ')' : '')),
+                        td(best(r, 'best') === '' ? '\u2013' : best(r, 'best') + (raise !== '' ? ' (' + raise + ')' : '')),
                         td(r.basis));
                 }
                 body.append(tr);
