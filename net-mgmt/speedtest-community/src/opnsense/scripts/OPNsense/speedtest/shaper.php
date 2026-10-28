@@ -69,8 +69,9 @@ const HISTORY_HEADER = ['time (UTC)', 'status', 'download before (Mbit/s)', 'dow
     'upload before (Mbit/s)', 'upload after (Mbit/s)', 'upload', 'best download (Mbit/s)', 'best upload (Mbit/s)',
     'raise download (Mbit/s)', 'raise upload (Mbit/s)', 'basis', 'message'];
 const SYSLOG_FILES = '/var/log/system/system_*.log';
-// CoDel default target (ms)
+// CoDel default target and interval (ms)
 const CODEL_TARGET_MS = 5;
+const CODEL_INTERVAL_MS = 100;
 // pipes are written in whole Mbit/s from this bandwidth (Kbit/s) up, in Kbit/s below it
 const MBIT_FROM = 20000;
 // link framing, bytes per packet on top of the IP packet: Ethernet header for a plain
@@ -434,31 +435,43 @@ function pipe_target($kbit)
 }
 
 /**
- * CoDel target of a pipe that uses CoDel, for its new bandwidth: on a slow pipe one
+ * CoDel target and interval of a pipe that uses CoDel, for its bandwidth: on a slow pipe one
  * full-size packet (as sent on the link) takes longer than the default target (5 ms), so the target
- * becomes that time; a target above the default goes back to it once the pipe is
- * fast enough, a lower one is left alone
- * @return string addition to the message, empty when the target is unchanged
+ * becomes that time and the interval grows by as much (as sqm-scripts does), so CoDel does not drop
+ * before a few packets could be sent; both go back to the default once the pipe is fast enough. A
+ * lower target is left alone, and so is an interval that is not the default or the one set here.
+ * @return string addition to the message, empty when nothing changed
  */
 function codel_target($pipe, $kbit, $link)
 {
     if ((string)$pipe->scheduler != 'fq_codel' && (string)$pipe->codel_enable != '1') {
         return '';
     }
+    // the interval that goes with a target ('' is the default)
+    $interval_for = function ($target) {
+        return $target !== '' && (int)$target > CODEL_TARGET_MS ?
+            (string)(CODEL_INTERVAL_MS + (int)$target - CODEL_TARGET_MS) : '';
+    };
     $ms = (int)ceil(wire_bytes($link['mtu'], $link) * 8 / $kbit);
     $current = (string)$pipe->codel_target;
+    $interval = (string)$pipe->codel_interval;
+    $new = $current;
     if ($ms > CODEL_TARGET_MS) {
         $new = (string)$ms;
     } elseif ($current !== '' && (int)$current > CODEL_TARGET_MS) {
         $new = '';
-    } else {
-        return '';
     }
-    if ($new === $current) {
+    $new_interval = $interval === '' || $interval === $interval_for($current) ? $interval_for($new) : $interval;
+    if ($new === $current && $new_interval === $interval) {
         return '';
     }
     $pipe->codel_target = $new;
-    return $new === '' ? ', CoDel target back to default' : sprintf(', CoDel target %d ms', $ms);
+    $pipe->codel_interval = $new_interval;
+    if ($new === '') {
+        return $new_interval === '' ? ', CoDel target and interval back to default' : ', CoDel target back to default';
+    }
+    return sprintf(', CoDel target %d ms', $ms) .
+        ($new_interval !== $interval_for($new) ? '' : sprintf(', interval %d ms', (int)$new_interval));
 }
 
 function shaper_apply()
@@ -768,6 +781,12 @@ if ($action == 'set') {
                 $minchange,
                 $minchange * RAISE_FROM
             ));
+            // a pipe kept at its bandwidth still takes the CoDel settings for it (e.g. set by an older version)
+            $codel = codel_target($pipe, $current, $link);
+            if ($codel !== '') {
+                $result[$dir]['note'] .= $codel;
+                $changed = true;
+            }
             $msgs[] = sprintf('%s %s: %.2f Mbit/s %s', $dir, $pipe->description, $current / 1000, $result[$dir]['note']);
         }
     }
